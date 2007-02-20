@@ -1,0 +1,38 @@
+
+
+
+This operates mainly in the way suggested by: 
+
+http://www.openplans.org/projects/opencore/transcluder
+
+
+Running Tests 
+-------------
+
+nosetests --with-doctest 
+(from this directory or the transcluder directory) 
+
+
+URI Templates
+-------------
+
+uri templates recognize the following variables: 
+
+request.url 
+request.scheme
+request.host
+request.port
+request.path
+request.params
+request.query 
+request.fragment
+
+
+Todo
+-----
+
+fetching external resources
+caching headers 
+conditional get 
+any additional merging behavior 
+factor out duplication of deliverance code ? 
