@@ -43,6 +43,39 @@ def html_string_compare(astr, bstr):
             % (astr, bstr, '\n'.join(reporter)))
 
 
+
+
+class TimeBomb: 
+    def __init__(self, app, calls_until_explosion=1): 
+        self.app = app 
+        self.calls_left = calls_until_explosion 
+
+    def __call__(self, environ, start_response): 
+        if self.calls_left > 0: 
+            self.calls_left-=1
+            return self.app(environ, start_response) 
+
+        raise Exception("requested resource internally!")
+
+def external(dir):
+    print "external test for" , dir
+    static_app = StaticURLParser(dir)
+    bomb = TimeBomb(static_app)
+    trans_app = TranscluderMiddleware(bomb)
+    app = TestApp(trans_app)
+
+    result = app.get('/index.html')
+    expected = TestApp(static_app).get('/expected.html')
+    html_string_compare(result.body, expected.body)
+
+def test_external():
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', 'external')
+    for dir in os.listdir(test_dir):
+        if dir.startswith('.'):
+            continue 
+        yield external, os.path.join(test_dir, dir)
+
 def run_dir(dir):
     print "Running test in %s" % dir
     static_app = StaticURLParser(dir)
@@ -53,11 +86,11 @@ def run_dir(dir):
     expected = app.get('/expected.html')
     html_string_compare(result.body, expected.body)
 
-def test_all():
+def test_internal():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data')
     for dir in os.listdir(test_dir):
-        if dir.startswith('.'): 
+        if dir.startswith('.') or dir.startswith('external'): 
             continue 
         yield run_dir, os.path.join(test_dir, dir)
 
