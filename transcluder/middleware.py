@@ -14,6 +14,11 @@ from transcluder.transclude import transclude
 
 from wsgifilter.resource_fetcher import *
 
+from paste import httpheaders
+
+def get_cookies_from_headers(headers):
+    return httpheaders.SET_COOKIE(headers)
+
 class TranscluderMiddleware:
     def __init__(self, app, 
                  recursion_predicate=helpers.always_recurse): 
@@ -22,6 +27,10 @@ class TranscluderMiddleware:
         self.recursion_predicate = recursion_predicate
 
     def __call__(self, environ, start_response):
+
+        environ = environ.copy()
+        environ['transcluder.cookies'] = {}
+
         # intercept the call if it is for an html document 
         status, headers, body = intercept_output(environ, self.app,
                                                  self.should_intercept,
@@ -39,7 +48,11 @@ class TranscluderMiddleware:
                    should_recurse=self.recursion_predicate)
 
         body = lxmlutils.tostring(doc)
-        
+
+        print environ['transcluder.cookies']
+        newcookie = ''
+        headers.append(('Set-Cookie', newcookie))
+
         start_response(status, headers)
         return [body]
 
@@ -52,14 +65,21 @@ class TranscluderMiddleware:
         return helpers.make_uri_template_dict(url)
 
 
-    def etree_subrequest(self, url, environ):
-        # XXX this is essentially a stub, 
-        # should handle external requests, 
-        # raise specific exceptions etc, etc. 
-        # this is in no way robust
+    def premangle_subrequest(self, url, environ):
+        """
+        this function is a hook for subclasses to arbitrarily 
+        rewrite subrequests. 
+        """
+        return url
 
-        url_parts = urlparse.urlparse(url)
+    def etree_subrequest(self, url, environ):
+
+        effective_url = self.premangle_subrequest(url, environ)
+
+        url_parts = urlparse.urlparse(effective_url)
         env = environ.copy()
+        #env['HTTP_COOKIE'] = self.get_relevant_cookie(env, url)
+
         env['PATH_INFO'] = url_parts[2]
         if len(url_parts[4]):
             env['QUERY_STRING'] = url_parts[4]
@@ -70,7 +90,10 @@ class TranscluderMiddleware:
         if request_url_parts[0:2] == url_parts[0:2]:
             status, headers, body = get_internal_resource(url, env, self.app)
         else:
-            status, headers, body = get_external_resource(url)
+            status, headers, body = get_external_resource(url, env)
+
+        #put cookies into real environ
+        environ['transcluder.cookies']['gefm'] = get_cookies_from_headers(headers)
         if status.startswith('200'):
             return etree.HTML(body)
         else:

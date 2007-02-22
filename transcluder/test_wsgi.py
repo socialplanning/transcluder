@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 from lxml import etree
@@ -43,6 +44,24 @@ def html_string_compare(astr, bstr):
             % (astr, bstr, '\n'.join(reporter)))
 
 
+class AnyDomainTranscluderMiddlware(TranscluderMiddleware):
+    def premangle_subrequests(self, url, environ):
+        re.compile('[a-z]*.example.com')
+        return re.sub("localhost", url)
+
+class CookieApp:
+    def __init__(self):
+        pass 
+
+    def __call__(self, environ, start_response):
+        domain = "/".split(environ['PATH_INFO'])[0]
+
+        cookies = [('Set-Cookie', 'a=b;domain=%s.example.com' % domain)]
+        start_response('200 OK', cookies)
+        return "Cookie from %s" % domain
+
+def test_cookie():
+    return
 
 
 class TimeBomb: 
