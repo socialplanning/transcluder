@@ -12,6 +12,8 @@ import lxmlutils
 from transcluder import helpers 
 from transcluder.transclude import transclude 
 
+from wsgiutils.resource_fetcher import *
+
 class TranscluderMiddleware:
     def __init__(self, app, 
                  recursion_predicate=helpers.always_recurse): 
@@ -62,7 +64,13 @@ class TranscluderMiddleware:
         if len(url_parts[4]):
             env['QUERY_STRING'] = url_parts[4]
 
-        status, headers, body = intercept_output(env, self.app)
+        request_url = construct_url(environ, with_path_info=False, with_query_string=False)
+        request_url_parts = urlparse.urlparse(request_url)
+
+        if request_url_parts[0:2] == url_parts[0:2]:
+            status, headers, body = get_internal_resource(env, url, self.app)
+        else:
+            status, headers, body = get_external_resource(url)
         if status.startswith('200'):
             return etree.HTML(body)
         else:
