@@ -3,7 +3,7 @@ import urlparse
 import lxmlutils 
 from transcluder import helpers 
 from transcluder import uritemplates
-
+import traceback 
 
 def transclude(document, document_url, 
                variables, fetch, 
@@ -43,6 +43,7 @@ def transclude(document, document_url,
             merge(target, subdoc, source_url)
 
         except Exception, message: 
+            traceback.print_exc()
             attach_warning(target, "failed to retrieve %s (%s)" % 
                            (source_url, message))
 

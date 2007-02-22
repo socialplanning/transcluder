@@ -21,6 +21,7 @@ setup(name="Transcluder",
         'lxml',
         'Paste',
         'FormEncode', 
+        'WSGIFilter', 
         'nose',
         'ElementTree'
       ],

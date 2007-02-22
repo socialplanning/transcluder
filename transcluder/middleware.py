@@ -12,7 +12,7 @@ import lxmlutils
 from transcluder import helpers 
 from transcluder.transclude import transclude 
 
-from wsgiutils.resource_fetcher import *
+from wsgifilter.resource_fetcher import *
 
 class TranscluderMiddleware:
     def __init__(self, app, 
@@ -68,7 +68,7 @@ class TranscluderMiddleware:
         request_url_parts = urlparse.urlparse(request_url)
 
         if request_url_parts[0:2] == url_parts[0:2]:
-            status, headers, body = get_internal_resource(env, url, self.app)
+            status, headers, body = get_internal_resource(url, env, self.app)
         else:
             status, headers, body = get_external_resource(url)
         if status.startswith('200'):

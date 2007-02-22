@@ -44,6 +44,7 @@ def html_string_compare(astr, bstr):
 
 
 def run_dir(dir):
+    print "Running test in %s" % dir
     static_app = StaticURLParser(dir)
     trans_app = TranscluderMiddleware(static_app)
     app = TestApp(trans_app)
@@ -56,6 +57,8 @@ def test_all():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data')
     for dir in os.listdir(test_dir):
+        if dir.startswith('.'): 
+            continue 
         yield run_dir, os.path.join(test_dir, dir)
 
 if __name__ == '__main__':
