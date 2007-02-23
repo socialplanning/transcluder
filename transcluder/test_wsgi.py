@@ -5,6 +5,8 @@ from lxml import etree
 from paste.fixture import TestApp
 from paste.urlparser import StaticURLParser
 from paste.response import header_value
+from paste.request import construct_url
+from paste.wsgilib import intercept_output
 from transcluder.middleware import TranscluderMiddleware
 from formencode.doctest_xml_compare import xml_compare
 
@@ -44,10 +46,10 @@ def html_string_compare(astr, bstr):
             % (astr, bstr, '\n'.join(reporter)))
 
 
-class AnyDomainTranscluderMiddlware(TranscluderMiddleware):
-    def premangle_subrequests(self, url, environ):
-        re.compile('[a-z]*.example.com')
-        return re.sub("localhost", url)
+class AnyDomainTranscluderMiddleware(TranscluderMiddleware):
+    def premangle_subrequest(self, url, environ):
+        pat = re.compile('[a-z]*.example.com')
+        return pat.sub("localhost", url)
 
 class CookieMiddlware:
     def __init__(self, app):
@@ -56,22 +58,32 @@ class CookieMiddlware:
     def __call__(self, environ, start_response):
         old_cookie = environ.get('HTTP_COOKIE', 'nothing')
 
-        domain = "/".split(environ['PATH_INFO'])[0]
+        domain = environ['PATH_INFO'].split("/")[1][0]
+
+        if construct_url(environ).endswith('/index.html') :
+            return self.app(environ, start_response)
 
         status, headers, body = intercept_output(environ, self.app)
-        headers.append(('Set-Cookie', 'a=b;domain=%s.example.com' % domain))
+        headers.append(('Set-Cookie', 'name=%s;domain=%s.example.com' % (domain,domain)))
         
         start_response('200 OK', headers)
-        return "<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)
+        return ["<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)]
 
 def test_cookie():
-    return True
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', 'cookie')
     static_app = StaticURLParser(test_dir)
     cookie_app = CookieMiddlware(static_app)
     transcluder = AnyDomainTranscluderMiddleware(cookie_app)
+    test_app = TestApp(transcluder)
+    test_static_app = TestApp(static_app)
 
+    result = test_app.get('/index.html')
+    expected = test_static_app.get('/expected1.html')
+    html_string_compare(result.body, expected.body)
+    result = test_app.get('/index.html')
+    expected = test_static_app.get('/expected2.html')
+    html_string_compare(result.body, expected.body)
 
 class TimeBomb: 
     def __init__(self, app, calls_until_explosion=1): 
