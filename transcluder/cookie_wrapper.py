@@ -6,6 +6,13 @@ from urlparse import urlparse
 from paste import httpheaders
 
 
+"""
+utilities for merging cookies from various sources 
+
+this does not handle merging cookies whose size totals
+more than the single cookie limit of 4k
+"""
+
 __all__ = ['split_header_words', 
            'get_set_cookies_from_headers', 
            'wrap_cookies', 
@@ -17,7 +24,13 @@ __all__ = ['split_header_words',
 
 
 def split_header_words(cookies):
-    """One day, I got a cookie like this from livejournal.  No, really!  Note the comma after thursday:
+    """
+    parses the value of the HTTP set-cookie header into a 
+    list of lists. each list represents a cookie and contains 
+    2-tuples consisiting of a cookie attribute name and its
+    value. 
+
+    One day, I got a cookie like this from livejournal.  No, really!  Note the comma after thursday:
     Set-Cookie: langpref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.livejournal.com
     At that point, I decided to become a farmer.  Farmers don't parse.
     """
@@ -28,6 +41,14 @@ def split_header_words(cookies):
 
 def get_set_cookies_from_headers(headers, url):
     """Gets the Set-Cookie headers (rather than getting and/or setting Cookie headers).
+
+    returns a map from 
+    (domain, name) -> cookie_map 
+    where domain is the origin domain specified by the cookie and 
+    name is the application set name associated with the value of 
+    the cookie. Other cookie information such as path, version etc 
+    are contained in the associated map. To obtain a list of 
+    cookie_maps, just take values() of the result. 
 
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
     >>> url = 'http://www.example.com/morx/fleem'
@@ -99,6 +120,12 @@ cookie_attributes = ['name', 'value', 'domain', 'path', 'expires', 'secure', 've
 def wrap_cookies(cookies, extra_attrs=None):
     """Converts a set of cookies into a single cookie
 
+    accepts a list of 'cookie-maps' associating the name and value of 
+    the cookie as well as other cookie attributes and attribute values  
+
+    returns a value suitable for use as the value of the http Cookie 
+    header. 
+
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
     >>> url = 'http://www.example.com/morx/fleem'
     >>> x = get_set_cookies_from_headers(headers, url).values()
@@ -133,6 +160,10 @@ def wrap_cookies(cookies, extra_attrs=None):
     return wrapped_cookie 
 
 def unwrap_cookies(wrapped_cookie): 
+    """
+    Unwraps a wrapped cookie created by wrap_cookies into a 
+    list of cookie-maps 
+    """
     cookie_parts = split_header_words([wrapped_cookie])
     if not cookie_parts:
         return []
@@ -156,6 +187,10 @@ def unwrap_cookies(wrapped_cookie):
     return unwrapped
 
 def expire_cookies(cookies):
+    """
+    accepts a list of cookie-maps and returns a list of those 
+    cookie maps whose expires date has not yet arrived. 
+    """
     out = []
     now = time.time()
     for cookie in cookies:
@@ -165,6 +200,12 @@ def expire_cookies(cookies):
 
 
 def get_relevant_cookies(jar, url):
+    """
+    accepts a list of cookie maps and returns those 
+    cookie maps which should be sent to the url 
+    specified according to the domain and path 
+    specifications in the cookies. 
+    """
     urlparts = urlparse(url)
     domain = urlparts[1]
     path = urlparts[2]
@@ -174,6 +215,10 @@ def get_relevant_cookies(jar, url):
 
 
 def make_cookie_string(cookies):
+    """
+    flattens a cookie map into a string suitable 
+    for use as the value of the http Cookie header. 
+    """
     cookie_strings = []
     for cookie in cookies:
         #fixme: append domain, path
