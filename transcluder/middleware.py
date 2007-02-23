@@ -15,13 +15,54 @@ from transcluder.transclude import transclude
 from wsgifilter.resource_fetcher import *
 
 from paste import httpheaders
-from cookielib import split_header_words
+from cookielib import split_header_words as broken_split_header_words, domain_match, IPV4_RE, http2time
 
 import base64
 import time
+import re
+
+def split_header_words(cookies):
+    """One day, I got a cookie like this from livejournal.  No, really!  Note the comma after thursday:
+    Set-Cookie: langpref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.livejournal.com
+    At that point, I decided to become a farmer.  Farmers don't parse.
+    """
+
+    pat = re.compile("expires=((?:\w+)day,.*?)([;,]|$)")
+    return broken_split_header_words(map(lambda c : pat.sub(r'expires="\1"\2', c), cookies))
+
 
 def get_set_cookies_from_headers(headers, url):
     """Gets the Set-Cookie headers (rather than getting and/or setting Cookie headers).
+
+    >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
+    >>> url = 'http://www.example.com/morx/fleem'
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name') : {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    True
+
+    Check domain restrictions:
+    >>> headers.append(('Set-Cookie', 'name=value;domain=.badsite.com;path=/morx'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    True
+
+    Check path restrictions:
+    >>> headers.append(('Set-Cookie', 'name=value;domain=.example.com;path=/fleem'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    True
+
+    Check default domain
+    >>> headers.append(('Set-Cookie', 'name=value;path=/morx'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value'}}
+    True
+
+    >>> headers.append(('Set-Cookie', 'name=value;path=/morx; Max-Age=1134771719'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
+    True
+
+    >>> headers.append(('Set-Cookie', 'BMLschemepref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.livejournal.com'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
+    True
+
+
     """
     cookie_headers = [x[1] for x in headers if x[0].lower() == 'set-cookie']
     cookies = split_header_words(cookie_headers)
@@ -32,19 +73,34 @@ def get_set_cookies_from_headers(headers, url):
         for k, v in c[1:]:
             cookie_dict[k.lower()] = v
         cookie_dict['name'], cookie_dict['value'] = c[0]
-        if cookie_dict.has_key('max-ages'):
-            cookie_dict['max-age'] = httpheaders.EXPIRES.parse(cookie_dict['max-age'])
+        if cookie_dict.has_key('expires'):
+            cookie_dict['expires'] = http2time(cookie_dict['expires'])
+        if cookie_dict.has_key('max-age'):            
+            cookie_dict['expires'] = str(int(time.time()) + int(cookie_dict['max-age']))
+            del cookie_dict['max-age']
 
-        #fixme: check that domain is valid using crazy rfc2109 moon logic
-        if not cookie_dict.has_key('domain'):
-            cookie_dict['domain'] = urlparse(url)[1]
+        #rfc2109 section 4.3.2 "moon logic"
+        urlparts = urlparse(url)
+        request_host = urlparts[1]
+        if cookie_dict.has_key('domain'):
+            if not IPV4_RE.search(request_host):
+                if (not request_host.endswith(cookie_dict['domain']) or 
+                    '.' in request_host[:len(request_host) - len(cookie_dict['domain'])]):
+                    continue
+        else:
+            cookie_dict['domain'] = request_host
+
+        if cookie_dict.has_key('path'):
+            if not urlparts[2].startswith(cookie_dict['path']):
+                continue
+        #end moon logic
 
         key = (cookie_dict['domain'], cookie_dict['name'])
         cookies_by_key [key] = cookie_dict
 
     return cookies_by_key
 
-cookie_attributes = ['name', 'value', 'domain', 'path', 'max-age', 'secure', 'version']
+cookie_attributes = ['name', 'value', 'domain', 'path', 'expires', 'secure', 'version']
 def wrap_cookies(cookies, extra_attrs=None):
     """
     """
@@ -59,13 +115,14 @@ def wrap_cookies(cookies, extra_attrs=None):
     wrapped_cookie = "m=%s" % value 
     if not extra_attrs: 
         extra_attrs = {}
+
+    if not extra_attrs.has_key('max-age') and not extra_attrs.has_key('expires'):
+        extra_attrs['max-age'] = 2147368447        
     
-    if not extra_attrs.has_key('max-age'):
-        extra_attrs['max-age'] = 2147368447
-    
-    tmp = []
-    httpheaders.LAST_MODIFIED.update(tmp, time=extra_attrs['max-age'])
-    extra_attrs['max-age']= tmp[0][1]
+    if extra_attrs.has_key('expires') and isinstance(extra_attrs['expires'], str):
+        tmp = []
+        httpheaders.LAST_MODIFIED.update(tmp, time=extra_attrs['expires'])
+        extra_attrs['expires']= tmp[0][1]
 
     for key, val in extra_attrs.items(): 
         wrapped_cookie += ";%s = %s" % (key,val)
@@ -89,7 +146,7 @@ def unwrap_cookies(wrapped_cookie):
         cookie_dict = {}
         for i in range(len(cookie_attributes)):
             cookie_dict[cookie_attributes[i]] = split_cookie[i]
-        cookie_dict['max-age'] = httpheaders.EXPIRES.parse(cookie_dict['max-age'])
+        cookie_dict['expires'] = http2time(cookie_dict['expires'])
         unwrapped.append(cookie_dict)
     return unwrapped
 
@@ -97,26 +154,19 @@ def expire_cookies(cookies):
     out = []
     now = time.time()
     for cookie in cookies:
-        if cookie['max-age'] < now:
+        if cookie['expires'] < now:
             out.append(cookie)
     return out
 
-def is_fqdn(domain):
-    """Or something.  Should really try to avoid .co.uk etc"""
-    return "." in domain[1:]
 
 def get_relevant_cookies(env, url):
-    domain = urlparse(url)[1]
-    cookies = []
-    for cookie in env['transcluder.incookies']:
-        if cookie['domain'] == domain:
-            cookies.append(cookie)
-        if (cookie['domain'].startswith('.') and 
-            is_fqdn(cookie['domain']) and 
-            domain.endswith(cookie['domain'])):
-            cookies.append(cookie)
-    #fixme: check paths
-    return cookies
+    urlparts = urlparse(url)
+    domain = urlparts[1]
+    path = urlparts[2]
+
+    filtered = [x for x in env['transcluder.incookies'] if domain_match(domain, x['domain'])]
+    return [x for x in filtered if path.startswith(x['path'])]
+
 
 def make_cookie_string(cookies):
     cookie_strings = []
@@ -207,7 +257,7 @@ class TranscluderMiddleware:
             status, headers, body = get_external_resource(url, env)
 
         #put cookies into real environ
-        environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, effective_url))
+        environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, url))
         if status.startswith('200'):
             return etree.HTML(body)
         else:

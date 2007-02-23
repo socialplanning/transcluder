@@ -64,7 +64,8 @@ class CookieMiddlware:
             return self.app(environ, start_response)
 
         status, headers, body = intercept_output(environ, self.app)
-        headers.append(('Set-Cookie', 'name=%s;domain=%s.example.com' % (domain,domain)))
+        headers.append(('Set-Cookie', 'name=%s' % domain))
+        #print headers
         
         start_response('200 OK', headers)
         return ["<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)]
