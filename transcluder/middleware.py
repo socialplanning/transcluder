@@ -102,10 +102,18 @@ def get_set_cookies_from_headers(headers, url):
 
 cookie_attributes = ['name', 'value', 'domain', 'path', 'expires', 'secure', 'version']
 def wrap_cookies(cookies, extra_attrs=None):
-    """
+    """Converts a set of cookies into a single cookie
+
+    >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
+    >>> url = 'http://www.example.com/morx/fleem'
+    >>> x = get_set_cookies_from_headers(headers, url).values()
+    >>> unwrap_cookies(wrap_cookies(x)) == x
+    True
+
+    
     """
     output_list = []
-    for cookie in cookies.values():
+    for cookie in cookies:
         cookie_list = []
         for attr in cookie_attributes:
             cookie_list.append(cookie.get(attr, ''))
@@ -145,8 +153,10 @@ def unwrap_cookies(wrapped_cookie):
         split_cookie = encoded_cookie.split("\1")
         cookie_dict = {}
         for i in range(len(cookie_attributes)):
-            cookie_dict[cookie_attributes[i]] = split_cookie[i]
-        cookie_dict['expires'] = http2time(cookie_dict['expires'])
+            if split_cookie[i]: 
+                cookie_dict[cookie_attributes[i]] = split_cookie[i]
+        if cookie_dict.has_key('expires'): 
+            cookie_dict['expires'] = http2time(cookie_dict['expires'])
         unwrapped.append(cookie_dict)
     return unwrapped
 
@@ -154,7 +164,7 @@ def expire_cookies(cookies):
     out = []
     now = time.time()
     for cookie in cookies:
-        if cookie['expires'] < now:
+        if not cookie.has_key('expires') or cookie['expires'] < now:
             out.append(cookie)
     return out
 
@@ -165,7 +175,7 @@ def get_relevant_cookies(env, url):
     path = urlparts[2]
 
     filtered = [x for x in env['transcluder.incookies'] if domain_match(domain, x['domain'])]
-    return [x for x in filtered if path.startswith(x['path'])]
+    return [x for x in filtered if path.startswith(x.get('path',''))]
 
 
 def make_cookie_string(cookies):
@@ -214,7 +224,7 @@ class TranscluderMiddleware:
 
         body = lxmlutils.tostring(doc)
 
-        newcookie = wrap_cookies(environ['transcluder.outcookies'])
+        newcookie = wrap_cookies(environ['transcluder.outcookies'].values())
         headers.append(('Set-Cookie', newcookie))
 
         start_response(status, headers)
