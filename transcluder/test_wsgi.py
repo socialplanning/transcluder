@@ -49,19 +49,28 @@ class AnyDomainTranscluderMiddlware(TranscluderMiddleware):
         re.compile('[a-z]*.example.com')
         return re.sub("localhost", url)
 
-class CookieApp:
-    def __init__(self):
-        pass 
+class CookieMiddlware:
+    def __init__(self, app):
+        self.app = app
 
     def __call__(self, environ, start_response):
+        old_cookie = environ.get('HTTP_COOKIE', 'nothing')
+
         domain = "/".split(environ['PATH_INFO'])[0]
 
-        cookies = [('Set-Cookie', 'a=b;domain=%s.example.com' % domain)]
-        start_response('200 OK', cookies)
-        return "Cookie from %s" % domain
+        status, headers, body = intercept_output(environ, self.app)
+        headers.append(('Set-Cookie', 'a=b;domain=%s.example.com' % domain))
+        
+        start_response('200 OK', headers)
+        return "<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)
 
 def test_cookie():
-    return
+    return True
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', 'cookie')
+    static_app = StaticURLParser(test_dir)
+    cookie_app = CookieMiddlware(static_app)
+    transcluder = AnyDomainTranscluderMiddleware(cookie_app)
 
 
 class TimeBomb: 
@@ -107,10 +116,10 @@ def run_dir(dir):
 
 def test_internal():
     base_dir = os.path.dirname(__file__)
-    test_dir = os.path.join(base_dir, 'test-data')
+    test_dir = os.path.join(base_dir, 'test-data', 'standard')
     for dir in os.listdir(test_dir):
-        if dir.startswith('.') or dir.startswith('external'): 
-            continue 
+        if dir.startswith('.'):
+            continue
         yield run_dir, os.path.join(test_dir, dir)
 
 if __name__ == '__main__':
