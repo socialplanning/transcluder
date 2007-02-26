@@ -224,6 +224,8 @@ def make_cookie_string(cookies):
     """
     flattens a cookie map into a string suitable 
     for use as the value of the http Cookie header. 
+    Note: if you change this to make it unstable, 
+    change deptracker too.
     """
     cookie_strings = []
     for cookie in cookies:
