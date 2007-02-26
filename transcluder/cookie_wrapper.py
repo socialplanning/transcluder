@@ -60,6 +60,11 @@ def get_set_cookies_from_headers(headers, url):
     >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
     True
 
+    Check domain restrictions:
+    >>> headers.append(('Set-Cookie', 'name=value;domain=foo.bar.example.com'))
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    True
+
     Check path restrictions:
     >>> headers.append(('Set-Cookie', 'name=value;domain=.example.com;path=/fleem'))
     >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
@@ -74,10 +79,12 @@ def get_set_cookies_from_headers(headers, url):
     >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
     True
 
-    >>> headers.append(('Set-Cookie', 'BMLschemepref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.livejournal.com'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
-    True
 
+    >>> headers = [('Set-Cookie', 'BMLschemepref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.example.com')]
+    >>> get_set_cookies_from_headers(headers, url) ==  {('.example.com', 'BMLschemepref'): {'path': '/', 'domain': '.example.com', 'expires': 0, 'name': 'BMLschemepref', 'value': ''}}
+    True
+    
+    
 
     """
     cookie_headers = [x[1] for x in headers if x[0].lower() == 'set-cookie']
@@ -210,8 +217,7 @@ def get_relevant_cookies(jar, url):
     domain = urlparts[1]
     path = urlparts[2]
 
-    filtered = [x for x in jar if domain_match(domain, x['domain'])]
-    return [x for x in filtered if path.startswith(x.get('path',''))]
+    return [x for x in jar if domain_match(domain, x['domain']) and path.startswith(x.get('path',''))]
 
 
 def make_cookie_string(cookies):
@@ -221,6 +227,10 @@ def make_cookie_string(cookies):
     """
     cookie_strings = []
     for cookie in cookies:
-        #fixme: append domain, path
-        cookie_strings.append("%s=%s" % (cookie['name'], cookie['value']))
+        extra = ''
+        if cookie['domain'].startswith('.'):
+            extra = ';domain=%s' % cookie['domain']
+        if cookie.has_key('path'):
+            extra += ';path=%s' % cookie['path']
+        cookie_strings.append("%s=%s%s" % (cookie['name'], cookie['value'], extra))
     return ",".join(cookie_strings)
