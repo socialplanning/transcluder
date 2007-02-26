@@ -10,7 +10,7 @@ from lxml import etree
 import lxmlutils
 
 from transcluder import helpers 
-from transcluder.transclude import transclude 
+from transcluder.transclude import Transcluder
 
 from wsgifilter.resource_fetcher import *
 from cookie_wrapper import * 
@@ -49,8 +49,8 @@ class TranscluderMiddleware:
         variables = self.get_template_vars(request_url)
         fetch = lambda url: self.etree_subrequest(url, environ)
         
-        transclude(doc, request_url, variables, fetch, 
-                   should_recurse=self.recursion_predicate)
+        tc = Transcluder(variables, fetch, should_recurse=self.recursion_predicate)
+        tc.transclude(doc, request_url)
 
         body = lxmlutils.tostring(doc)
 
