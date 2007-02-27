@@ -1,3 +1,4 @@
+from sets import Set
 from lxml import etree
 import urlparse
 import lxmlutils 
@@ -52,22 +53,22 @@ class Transcluder:
             except Exception, message: 
                 traceback.print_exc()
                 self.attach_warning(target, "failed to retrieve %s (%s)" % 
-                               (source_url, message))
+                               (source_url, traceback.format_exc()))
 
     def find_dependencies(self, document, document_url): 
         """
         """
 
-        deps = [] 
+        deps = Set() 
 
         target_links = document.xpath("//a[@rel='include']")
         for target in target_links: 
-            source_url = get_include_url(target, document_url, self.variables)
+            source_url = self.get_include_url(target, document_url)
 
             if source_url is not None: 
-                deps.append(source_url)
+                deps.add(source_url)
 
-        return deps 
+        return list(deps)
 
 
 

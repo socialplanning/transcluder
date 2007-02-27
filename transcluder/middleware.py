@@ -13,15 +13,24 @@ from transcluder import helpers
 from transcluder.transclude import Transcluder
 
 from wsgifilter.resource_fetcher import *
-from cookie_wrapper import * 
-
+from transcluder.cookie_wrapper import * 
+from transcluder.tasklist import PageManager, TaskList
+from transcluder.deptracker import DependencyTracker
 
 class TranscluderMiddleware:
-    def __init__(self, app, 
+    def __init__(self, app, deptracker = None, tasklist = None,
                  recursion_predicate=helpers.always_recurse): 
 
         self.app = app
         self.recursion_predicate = recursion_predicate
+        if deptracker:
+            self.deptracker = deptracker
+        else:
+            self.deptracker = DependencyTracker()
+        if tasklist:
+            self.tasklist = tasklist
+        else:
+            self.tasklist = TaskList()
 
     def __call__(self, environ, start_response):
 
@@ -47,9 +56,18 @@ class TranscluderMiddleware:
         # perform transclusion if we intercepted 
         doc = etree.HTML(body)
         variables = self.get_template_vars(request_url)
-        fetch = lambda url: self.etree_subrequest(url, environ)
         
-        tc = Transcluder(variables, fetch, should_recurse=self.recursion_predicate)
+        tc = Transcluder(variables, None, should_recurse=self.recursion_predicate)
+
+        pm = PageManager(request_url, environ, self.deptracker, tc.find_dependencies, self.tasklist, self.etree_subrequest)
+        def simple_fetch(url):
+            status, headers, body, parsed = pm.fetch(url)
+            if status.startswith('200'):
+                return parsed
+            else:
+                raise Exception, status
+        tc.fetch = simple_fetch
+        
         tc.transclude(doc, request_url)
 
         body = lxmlutils.tostring(doc)
@@ -98,9 +116,11 @@ class TranscluderMiddleware:
 
         #put cookies into real environ
         environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, url))
+
         if status.startswith('200'):
-            return etree.HTML(body)
+            parsed = etree.HTML(body)
         else:
-            raise Exception, status
+            parsed = None
+        return status, headers, body, parsed
 
 

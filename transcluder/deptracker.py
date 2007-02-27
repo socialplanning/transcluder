@@ -1,6 +1,6 @@
 from sets import Set
 from threading import RLock 
-from transcluder.cookie_wrapper import get_relevant_cookies
+from transcluder.cookie_wrapper import get_relevant_cookies, make_cookie_string
 
 def make_resource_key(url, environ): 
     cookies = [] 
@@ -20,7 +20,7 @@ class DependencyTracker:
         self._deps[resource] = deps[:]
         self._lock.release() 
     
-    def update(self, resource, dep_map): 
+    def update(self, dep_map): 
         self._lock.acquire()
         self._deps.update(dep_map)
         self._lock.release()
@@ -65,6 +65,7 @@ class DependencyTracker:
                 if not dep in seen: 
                     seen.add(dep)
                     dep_list.append(dep)
+            index += 1
 
         self._lock.release() 
 
