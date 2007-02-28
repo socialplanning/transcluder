@@ -1,5 +1,6 @@
 from sets import Set
 from threading import RLock 
+from decorator import decorator
 from transcluder.cookie_wrapper import get_relevant_cookies, make_cookie_string
 
 def make_resource_key(url, environ): 
@@ -10,51 +11,52 @@ def make_resource_key(url, environ):
     return (url, make_cookie_string(cookies))
 
 
+@decorator
+def locked(func, *args, **kw):
+    lock = args[0]._lock
+    lock.acquire()
+    try:
+        result = func(*args, **kw)
+    finally:
+        lock.release()
+    return result
+
 class DependencyTracker: 
     def __init__(self): 
         self._deps = {}
         self._lock = RLock() 
 
+    @locked
     def set_direct_deps(self, resource, deps): 
-        self._lock.acquire() 
         self._deps[resource] = deps[:]
-        self._lock.release() 
-    
+
+    @locked
     def update(self, dep_map): 
-        self._lock.acquire()
         self._deps.update(dep_map)
-        self._lock.release()
 
+    @locked
     def __len__(self): 
-        self._lock.acquire()
-        dep_len = len(self._deps)
-        self._lock.release()
-        return dep_len 
+        return len(self._deps)
 
+
+    @locked
     def clear(self): 
-        self._lock.acquire()
         self._deps.clear()
-        self._lock.release()
 
+    @locked
     def is_tracked(self, resource): 
-        self._lock.acquire()
-        tracked = self._deps.has_key(resource)
-        self._lock.release()
-        return tracked 
+        return self._deps.has_key(resource)
 
+    @locked
     def get_direct_deps(self, resource): 
-        self._lock.acquire() 
         if self._deps.has_key(resource):
-            deps = self._deps[resource][:] 
+            return self._deps[resource][:] 
         else:
-            deps = []
-        self._lock.release() 
-        return deps 
+            return []
 
+    @locked
     def get_all_deps(self, resource): 
         seen = Set() 
-
-        self._lock.acquire() 
 
         deps = self.get_direct_deps(resource)
 
@@ -66,8 +68,6 @@ class DependencyTracker:
                     seen.add(dep)
                     dep_list.append(dep)
             index += 1
-
-        self._lock.release() 
 
         return deps
 

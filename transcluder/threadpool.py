@@ -77,7 +77,7 @@ class WorkerThread(threading.Thread):
         threading.Thread.__init__(self, **kwds)
         self.setDaemon(1)
         self.workRequestQueue = requestsQueue
-        self.resultQueue = resultsQueue
+        self.resultQueue = resultsQueue #note: this has been disabled
         self._dismissed = threading.Event()
         self.start()
 
@@ -154,7 +154,7 @@ class ThreadPool:
     See the module doctring for more information.
     """
 
-    def __init__(self, num_workers, q_size=0):
+    def __init__(self, num_workers, requestsQueue = None, q_size=0):
         """Set up the thread pool and start num_workers worker threads.
 
         num_workers is the number of worker threads to start initialy.
@@ -163,7 +163,10 @@ class ThreadPool:
         more work requests in it (see putRequest method).
         """
 
-        self.requestsQueue = Queue.Queue(q_size)
+        if requestsQueue:
+            self.requestsQueue = requestsQueue
+        else:
+            self.requestsQueue = Queue.Queue(q_size)
         self.resultsQueue = Queue.Queue()
         self.workers = []
         self.workRequests = {}

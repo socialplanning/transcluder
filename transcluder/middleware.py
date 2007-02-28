@@ -17,6 +17,9 @@ from transcluder.cookie_wrapper import *
 from transcluder.tasklist import PageManager, TaskList
 from transcluder.deptracker import DependencyTracker
 
+def is_conditional_get(environ):
+    return 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_NONE_MATCH' in environ
+
 class TranscluderMiddleware:
     def __init__(self, app, deptracker = None, tasklist = None,
                  recursion_predicate=helpers.always_recurse): 
@@ -33,7 +36,6 @@ class TranscluderMiddleware:
             self.tasklist = TaskList()
 
     def __call__(self, environ, start_response):
-
         environ = environ.copy()
 
         environ['transcluder.outcookies'] = {}
@@ -42,19 +44,22 @@ class TranscluderMiddleware:
         else:
             environ['transcluder.incookies'] = {}
         request_url = construct_url(environ)
-        environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(environ['transcluder.incookies'], request_url))
 
-        # intercept the call if it is for an html document 
-        status, headers, body = intercept_output(environ, self.app,
-                                                 self.should_intercept,
-                                                 start_response)
-        if status is None:
-            return body
+#         environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(environ['transcluder.incookies'], request_url))
 
-        environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, request_url))
+#         # intercept the call if it is for an html document 
+#         status, headers, body = intercept_output(environ, self.app,
+#                                                  self.should_intercept,
+#                                                  start_response)
+
+#         if status is None:
+#             return body
+
+#         environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, request_url))
+
 
         # perform transclusion if we intercepted 
-        doc = etree.HTML(body)
+#        doc = etree.HTML(body)
         variables = self.get_template_vars(request_url)
         
         tc = Transcluder(variables, None, should_recurse=self.recursion_predicate)
@@ -67,7 +72,14 @@ class TranscluderMiddleware:
             else:
                 raise Exception, status
         tc.fetch = simple_fetch
-        
+
+        if is_conditional_get(environ) and not pm.is_modified():
+            start_response('304 Not Modified', [])
+            return []
+
+        status, headers, body, parsed = pm.fetch(request_url)
+        doc = etree.HTML(body)
+       
         tc.transclude(doc, request_url)
 
         body = lxmlutils.tostring(doc)
@@ -80,7 +92,7 @@ class TranscluderMiddleware:
 
     def should_intercept(self, status, headers):
         type = header_value(headers, 'content-type')
-        return type.startswith('text/html') or type.startswith('application/xhtml+xml')
+        return type and (type.startswith('text/html') or type.startswith('application/xhtml+xml'))
 
 
     def get_template_vars(self, url): 

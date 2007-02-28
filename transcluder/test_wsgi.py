@@ -1,12 +1,14 @@
 import re
 import os
 import sys
+import time
 from lxml import etree
 from paste.fixture import TestApp
 from paste.urlparser import StaticURLParser
 from paste.response import header_value
 from paste.request import construct_url
 from paste.wsgilib import intercept_output
+from paste import httpheaders
 from transcluder.middleware import TranscluderMiddleware
 from formencode.doctest_xml_compare import xml_compare
 
@@ -45,6 +47,52 @@ def html_string_compare(astr, bstr):
         raise ValueError("Comparison failed between actual:\n==================\n%s\n\nexpected:\n==================\n%s\n\nReport:\n%s"
             % (astr, bstr, '\n'.join(reporter)))
 
+class ThreeOhFourMiddleware:
+    def __init__(self, app, last_modified = None, etag = None):
+        self.app = app
+        self.last_modified = last_modified
+        self.etag = etag
+
+    def __call__(self, environ, start_response):
+        send_304 = False
+        if self.last_modified and 'HTTP_IF_MODIFIED_SINCE' in environ:
+            send_304 = http_time_to_unix(environ['HTTP_IF_MODIFIED_SINCE']) > http_time_to_unix(self.last_modified)
+
+        if self.etag and 'HTTP_IF_NONE_MATCH' in environ:
+            send_304 = send_304 and self.etag in environ['HTTP_IF_NONE_MATCH']
+
+        if send_304:
+            start_response('304 Not Modified', [])
+            return []
+        else:
+            return self.app(environ, start_response)
+
+
+def make_http_time(t):
+    tmp = []
+    httpheaders.LAST_MODIFIED.update(tmp, time=t)
+    return tmp[0][1]
+
+def http_time_to_unix(h):
+    return time.strptime(h, "%a, %d %b %Y %H:%M:%S GMT")
+
+def test_304():
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', '304')
+    static_app = StaticURLParser(test_dir)
+    threeohfour_app = ThreeOhFourMiddleware(static_app, last_modified = make_http_time(1000))
+    transcluder = TranscluderMiddleware(threeohfour_app)
+    test_app = TestApp(transcluder)
+
+    #load up the deptracker
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
+
+    #and test it
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
+    expected = test_app.get('/expected.html')
+    print "result=", result
+    #html_string_compare(result.body, expected.body)
+    
 
 class AnyDomainTranscluderMiddleware(TranscluderMiddleware):
     def premangle_subrequest(self, url, environ):
@@ -65,7 +113,6 @@ class CookieMiddlware:
 
         status, headers, body = intercept_output(environ, self.app)
         headers.append(('Set-Cookie', 'name=%s' % domain))
-        #print headers
         
         start_response('200 OK', headers)
         return ["<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)]

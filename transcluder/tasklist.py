@@ -1,20 +1,9 @@
 from sets import Set
 from threading import Lock, RLock, Condition
-from decorator import decorator
 from enum import Enum
 from avl import new as avl
 from transcluder.threadpool import WorkRequest, ThreadPool
-from transcluder.deptracker import make_resource_key
-
-@decorator
-def locked(func, *args, **kw):
-    lock = args[0]._lock
-    lock.acquire()
-    try:
-        result = func(*args, **kw)
-    finally:
-        lock.release()
-    return result
+from transcluder.deptracker import make_resource_key, locked
 
 class TaskList:
     def __init__(self, poolsize=10):
@@ -22,7 +11,7 @@ class TaskList:
         self._lock = Lock()
         self.cv = Condition(self._lock)
         self.next_task_list_index = 0
-        self.threadpool = ThreadPool(poolsize)
+        self.threadpool = ThreadPool(poolsize, self)
 
     def get(self):
         self.cv.acquire()
@@ -66,7 +55,9 @@ class FetchListItem(WorkRequest):
 
     def __call__(self): 
         if self.request_type == RequestType.conditional_get:
-            etag = get_relevant_etag(self.url, self.environ)
+            #XXX: need to write get_relevant_etag (or steal from wsgifilter/deli)
+            #etag = get_relevant_etag(self.url, self.environ)
+            etag = ''
             if etag:
                 self.environ['HTTP_IF_NONE_MATCH'] = etag
         else:
@@ -85,7 +76,6 @@ class FetchListItem(WorkRequest):
     def archive_info(self): 
         return self.response
     
-
 
 PMState = Enum(
     'initial', 
@@ -123,15 +113,22 @@ class PageManager:
         return self.task_list_index - other.task_list_index    
 
     def is_modified(self): 
+
+        self._state = PMState.check_modification
         request_url, environ = self.request_url, self.environ
         if not ('HTTP_IF_NONE_MATCH' in environ or 
                 'HTTP_IF_MODIFIED_SINCE' in environ):
+            self._state = PMState.modified
             return True
 
-        if not self.deptracker.is_tracked(root_resource): 
+        if not self.deptracker.is_tracked(self.root_resource): 
+            #possible future todo: compute is-modified by issuing
+            #conditional (for is-modified) *and* unconditional (for
+            #transclusion tree) requests for each resource.
+            self._state = PMState.modified
             return True
 
-        tasklist.put_list(self)
+        self.tasklist.put_list(self)
         initial_requests = [request_url] 
         initial_requests += self.deptracker.get_all_deps(self.root_resource)
         self.expected_mod_responses = len(initial_requests)
@@ -150,6 +147,7 @@ class PageManager:
        
         self.tasklist.remove_list(self)
 
+        assert self._state == PMState.not_modified or self._state == PMState.modified
         if self._state == PMState.not_modified: 
             return False
 
@@ -208,6 +206,8 @@ class PageManager:
             
     @locked
     def got_304(self, task):
+        assert task.url not in self.page_archive
+        self.page_archive[task.url] = task.archive_info() 
 
         self._pending_work.remove(task.url) 
 
@@ -246,7 +246,8 @@ class PageManager:
             dep_list = self.find_dependencies(parsed, url)
         else:
             dep_list = []
-        self.deptracker.set_direct_deps(url, dep_list)
+        resource = make_resource_key(url, self.environ)
+        self.deptracker.set_direct_deps(resource, dep_list)
         
         if self._state == PMState.check_modification: 
             self._init_speculative_gets()            
