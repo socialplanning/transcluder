@@ -147,7 +147,7 @@ class PageManager:
        
         self.tasklist.remove_list(self)
 
-        assert self._state == PMState.not_modified or self._state == PMState.modified
+        assert self._state == PMState.not_modified or self._state == PMState.modified or self._state == PMState.done
         if self._state == PMState.not_modified: 
             return False
 
@@ -156,7 +156,7 @@ class PageManager:
     def fetch(self, url):
         if url in self.page_archive:
             status, headers, body, parsed = self.page_archive[url]
-            if not status.starswith('304'):
+            if not status.startswith('304'):
                 return self.page_archive[url]
 
         self._lock.acquire()
@@ -292,6 +292,9 @@ class PageManager:
 
     @locked 
     def begin_speculative_gets(self): 
+        if self._state == PMState.done:
+            return
+
         assert(self._state == PMState.initial or 
                self._state == PMState.modified)
         
