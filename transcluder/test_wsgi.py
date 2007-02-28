@@ -89,10 +89,8 @@ def test_304():
 
     #and test it
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
-    expected = test_app.get('/expected.html')
-    print "result=", result
-    #html_string_compare(result.body, expected.body)
-    
+    assert result.status == 304
+        
 
 class AnyDomainTranscluderMiddleware(TranscluderMiddleware):
     def premangle_subrequest(self, url, environ):
