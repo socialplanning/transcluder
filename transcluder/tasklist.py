@@ -2,6 +2,8 @@ from sets import Set
 from threading import Lock, RLock, Condition
 from enum import Enum
 from avl import new as avl
+from transcluder.cookie_wrapper import * 
+from wsgifilter.cache_utils import merge_cache_headers, parse_merged_etag
 from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key, locked
 
@@ -54,6 +56,8 @@ class FetchListItem(WorkRequest):
         WorkRequest.__init__(self, self)
 
     def __call__(self): 
+        self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
+
         if self.request_type == RequestType.conditional_get:
             #XXX: need to write get_relevant_etag (or steal from wsgifilter/deli)
             #etag = get_relevant_etag(self.url, self.environ)
@@ -99,9 +103,9 @@ class PageManager:
 
         self.find_dependencies = find_dependencies
 
-        self.gets_needed = 0 
         self.speculative_dep_info = {} 
         self.needed = Set() 
+        self.actual_deps = Set()
 
         self._pending_work = Set() 
         self._lock = RLock()
@@ -113,6 +117,12 @@ class PageManager:
         return self.task_list_index - other.task_list_index    
 
     def is_modified(self): 
+        if (self._state == PMState.modified or self._state == PMState.done or 
+            self._state == PMState.get_pages):
+            return True
+        if self._state == PMState.unmodified:
+            return False
+
 
         self._state = PMState.check_modification
         request_url, environ = self.request_url, self.environ
@@ -154,13 +164,17 @@ class PageManager:
         return True
 
     def fetch(self, url):
-        if url in self.page_archive:
-            status, headers, body, parsed = self.page_archive[url]
-            if not status.startswith('304'):
-                return self.page_archive[url]
 
         self._lock.acquire()
-        try:
+        try:        
+            if url in self.page_archive:
+                status, headers, body, parsed = self.page_archive[url]
+                if not status.startswith('304'):
+                    return self.page_archive[url]
+
+            if self._state == PMState.initial: 
+                self._init_speculative_gets()
+
             not_pending = not url in self._pending_work
             if not_pending:
                 tasks = [t for t in self._fetchlist if t.url == url]
@@ -188,6 +202,23 @@ class PageManager:
         finally:
             self._cv.release()
     
+
+    @locked 
+    def merge_headers_into(self, headers): 
+        assert self._state == PMState.done 
+
+        response_info = {} 
+        cookies = {}
+        for url in self.actual_deps: 
+            response_info[url] = self.page_archive[url][0:3]
+            status, page_headers, body, parsed = self.page_archive[url]
+            cookies.update(get_set_cookies_from_headers(page_headers, url))
+        
+        merge_cache_headers(response_info, headers)
+
+        newcookie = wrap_cookies(cookies.values())        
+        headers.append(('Set-Cookie', newcookie)) # replace? 
+
 
     @locked 
     def add_conditional_get(self, url): 
@@ -254,41 +285,50 @@ class PageManager:
 
         scheduled_urls = Set([t.url for t in self._fetchlist])
 
-        for dep in dep_list:                 
+        self.speculative_dep_info[url] = dep_list
+
+        for dep in dep_list:
             if (not dep in self.page_archive and 
                 not dep in self._pending_work and 
                 not dep in scheduled_urls): 
                 self.add_get(dep)
-                if task.url in self.needed:
-                    self.gets_needed+=1
 
-        if task.url in self.needed:
-            self.gets_needed -= 1
+        if task.url in self.needed: 
+            self.needed.remove(task.url)
+            self.actual_deps.add(task.url)
 
-            for dep in dep_list:                 
-                if dep in self.speculative_dep_info:
-                    deps = dep_list[:]
-                    index = 0
-                    while index < len(deps): 
-                        new_deps = self.speculative_dep_info.get(deps[index], [])
-                        for dep in new_deps: 
-                            if not dep in self.needed: 
-                                self.needed.add(dep)
-                                if not dep in self.page_archive:
-                                    self.gets_needed += 1
-                        index += 1
+            all_deps = self.get_all_deps(task.url)
             
-        else: 
-            self.speculative_dep_info[url] = dep_list
+            for dep in all_deps: 
+                if not dep in self.page_archive:
+                    self.needed.add(dep)
+                else: 
+                    self.actual_deps.add(dep)
+
 
         self._pending_work.remove(url) 
 
-        assert self.gets_needed >= 0
-        if self.gets_needed == 0:
+        if len(self.needed) == 0:
             self._state = PMState.done
             self.tasklist.remove_list(self)
 
         self.notify()
+
+    @locked 
+    def get_all_deps(self, url): 
+        seen = Set() 
+        deps = self.speculative_dep_info.get(url, [])[:]
+        index = 0
+        while index < len(deps): 
+            new_deps = self.speculative_dep_info.get(deps[index], [])
+            for dep in new_deps: 
+                if not dep in seen: 
+                    seen.add(dep)
+                    deps.append(dep)
+            index += 1
+        return deps
+    
+
 
     @locked 
     def begin_speculative_gets(self): 
@@ -307,14 +347,14 @@ class PageManager:
         self.tasklist.notify() 
 
     @locked 
-    def _init_speculative_gets(self): 
+    def _init_speculative_gets(self):         
         assert(self._state == PMState.initial or 
                self._state == PMState.check_modification)
 
         self._state = PMState.modified
         self._fetchlist = [] 
 
-        self.gets_needed = 1 
+
         self.speculative_dep_info = {} 
         self.needed = Set([self.request_url]) 
         

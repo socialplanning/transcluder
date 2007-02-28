@@ -43,6 +43,13 @@ class TranscluderMiddleware:
             environ['transcluder.incookies'] = expire_cookies(unwrap_cookies(environ['HTTP_COOKIE']))
         else:
             environ['transcluder.incookies'] = {}
+
+
+        if environ.has_key('HTTP_IF_NONE_MATCH'): 
+            environ['transcluder.etags'] = parse_merged_etag(environ['HTTP_IF_NONE_MATCH'])
+        else: 
+            environ['transcluder.etags'] = {}
+
         request_url = construct_url(environ)
 
         variables = self.get_template_vars(request_url)
@@ -67,9 +74,7 @@ class TranscluderMiddleware:
         if parsed: 
             tc.transclude(parsed, request_url)
             body = lxmlutils.tostring(parsed)
-        
-        newcookie = wrap_cookies(environ['transcluder.outcookies'].values())
-        headers.append(('Set-Cookie', newcookie))
+            pm.merge_headers_into(headers)
 
         start_response(status, headers)
         return [body]
@@ -96,7 +101,6 @@ class TranscluderMiddleware:
 
         url_parts = urlparse(effective_url)
         env = environ.copy()
-        env['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(env['transcluder.incookies'], url))
 
         env['PATH_INFO'] = url_parts[2]
         if len(url_parts[4]):
@@ -109,9 +113,6 @@ class TranscluderMiddleware:
             status, headers, body = get_internal_resource(url, env, self.app)
         else:
             status, headers, body = get_external_resource(url, env)
-
-        #put cookies into real environ
-        environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, url))
 
         if status.startswith('200') and self.is_html(status, headers):
             parsed = etree.HTML(body)
