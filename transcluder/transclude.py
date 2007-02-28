@@ -44,6 +44,10 @@ class Transcluder:
             try: 
                 subdoc = self.fetch(source_url)
 
+                if subdoc is None: 
+                    self.attach_warning(target, "No HTML content in %s" % source_url)
+                    continue
+
                 if self.should_recurse(source_url): 
                     self.transclude(subdoc, source_url)
 

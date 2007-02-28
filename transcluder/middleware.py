@@ -45,21 +45,6 @@ class TranscluderMiddleware:
             environ['transcluder.incookies'] = {}
         request_url = construct_url(environ)
 
-#         environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(environ['transcluder.incookies'], request_url))
-
-#         # intercept the call if it is for an html document 
-#         status, headers, body = intercept_output(environ, self.app,
-#                                                  self.should_intercept,
-#                                                  start_response)
-
-#         if status is None:
-#             return body
-
-#         environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, request_url))
-
-
-        # perform transclusion if we intercepted 
-#        doc = etree.HTML(body)
         variables = self.get_template_vars(request_url)
         
         tc = Transcluder(variables, None, should_recurse=self.recursion_predicate)
@@ -78,19 +63,18 @@ class TranscluderMiddleware:
             return []
 
         status, headers, body, parsed = pm.fetch(request_url)
-        doc = etree.HTML(body)
-       
-        tc.transclude(doc, request_url)
 
-        body = lxmlutils.tostring(doc)
-
+        if parsed: 
+            tc.transclude(parsed, request_url)
+            body = lxmlutils.tostring(parsed)
+        
         newcookie = wrap_cookies(environ['transcluder.outcookies'].values())
         headers.append(('Set-Cookie', newcookie))
 
         start_response(status, headers)
         return [body]
 
-    def should_intercept(self, status, headers):
+    def is_html(self, status, headers):
         type = header_value(headers, 'content-type')
         return type and (type.startswith('text/html') or type.startswith('application/xhtml+xml'))
 
@@ -129,7 +113,7 @@ class TranscluderMiddleware:
         #put cookies into real environ
         environ['transcluder.outcookies'].update(get_set_cookies_from_headers(headers, url))
 
-        if status.startswith('200'):
+        if status.startswith('200') and self.is_html(status, headers):
             parsed = etree.HTML(body)
         else:
             parsed = None
