@@ -3,7 +3,7 @@ from threading import Lock, RLock, Condition
 from decorator import decorator
 from enum import Enum
 from avl import new as avl
-from transcluder.threadpool import WorkRequest
+from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key
 
 @decorator
@@ -17,11 +17,12 @@ def locked(func, *args, **kw):
     return result
 
 class TaskList:
-    def __init__(self):
+    def __init__(self, poolsize=10):
         self._fetchlists = avl()
         self._lock = Lock()
         self.cv = Condition(self._lock)
         self.next_task_list_index = 0
+        self.threadpool = ThreadPool(poolsize)
 
     def get(self):
         self.cv.acquire()
