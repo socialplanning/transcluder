@@ -57,7 +57,7 @@ def make_http_time(t):
 def http_time_to_unix(h):
     return time.strptime(h, "%a, %d %b %Y %H:%M:%S GMT")
 
-def test_304():
+def test_if_mod_304():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
@@ -91,6 +91,128 @@ def test_304():
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
     assert result.status == 200
 
+
+def test_etag_304():
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', '304')
+
+    cache_app = CacheFixtureApp()
+    index_page = CacheFixtureResponseInfo(open(os.path.join(test_dir,'index.html')).read())
+    page1 = CacheFixtureResponseInfo(open(os.path.join(test_dir,'page1.html')).read())
+    page2 = CacheFixtureResponseInfo(open(os.path.join(test_dir,'page2.html')).read())
+    cache_app.map_url('/index.html',index_page)
+    cache_app.map_url('/page1.html',page1)
+    cache_app.map_url('/page2.html',page2)
+    
+    index_page.etag = 'index'
+    page1.etag = 'page1'
+    page2.etag = 'page2'
+
+    transcluder = TranscluderMiddleware(cache_app)
+    test_app = TestApp(transcluder)
+
+    #load up the deptracker
+    result = test_app.get('/index.html')
+    
+    etag = header_value(result.headers, 'ETAG')
+    assert etag is not None
+
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    assert result.status == 304 
+
+    page1.etag = 'page1.new'
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    assert result.status == 200 
+    
+    new_etag = header_value(result.headers, 'ETAG')
+    assert new_etag != etag 
+
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : new_etag})
+    assert result.status == 304 
+
+
+class PausingMiddleware: 
+    def __init__(self, app, sleep_time): 
+        self.app = app 
+        self.sleep_time = sleep_time
+
+    def __call__(self, environ, start_response): 
+        time.sleep(self.sleep_time)
+        return self.app(environ, start_response)
+
+
+    
+def test_parallel_gets(): 
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', '304')
+
+    sleep_time = 3
+    cache_app = CacheFixtureApp()
+    sleep_app = PausingMiddleware(cache_app, sleep_time)
+    transcluder = TranscluderMiddleware(sleep_app)
+    test_app = TestApp(transcluder)
+
+    page_list = ['index.html', 'index2.html', 'page1.html', 'page2.html', 'page2_1.html', 'page3.html', 'page4.html']
+    pages = {}
+    for page in page_list:
+        pages[page] = CacheFixtureResponseInfo(open(os.path.join(test_dir, page)).read())
+        cache_app.map_url('/' + page, pages[page])
+        pages[page].etag = page
+    
+    #load up the deptracker
+    print "parallel 1"
+    start = time.time() 
+    result = test_app.get('/index.html')
+    end = time.time() 
+    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    assert  2*sleep_time <= end - start < 3*sleep_time
+
+    etag = header_value(result.headers, 'ETAG')
+    assert etag is not None
+
+    #test parallel fetch from correct tracked deps
+    print "parallel 2"
+    start = time.time() 
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    end = time.time() 
+    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    assert  sleep_time <= end - start < 2*sleep_time
+    assert result.status == 304
+
+    print "parallel 3"
+    pages['page1.html'].etag = 'page1.new'
+    start = time.time() 
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})    
+    end = time.time() 
+    print "took %s sleep_times" % ((end - start) / sleep_time) 
+
+    assert  2*sleep_time <= end - start < 3*sleep_time
+    etag = header_value(result.headers, 'ETAG')
+
+    assert result.status == 200 
+
+    # change the content of the index page, this will make it depend on page3 
+    print "parallel 4"
+    cache_app.map_url('/index.html',pages['index2.html'])
+    start = time.time() 
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    end = time.time() 
+    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    assert  2*sleep_time <= end - start < 3*sleep_time
+
+    # change dependency to have a dependency 
+    print "parallel 5"
+    cache_app.map_url('/page2.html', pages['page2_1.html'])
+    start = time.time() 
+    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    end = time.time() 
+    
+    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    assert  3*sleep_time <= end - start < 4*sleep_time
+    
+    
+
+    
     
 
 class AnyDomainTranscluderMiddleware(TranscluderMiddleware):
@@ -145,7 +267,6 @@ class TimeBomb:
         raise Exception("requested resource internally!")
 
 def external(dir):
-    print "external test for" , dir
     static_app = StaticURLParser(dir)
     bomb = TimeBomb(static_app)
     trans_app = TranscluderMiddleware(bomb)
@@ -164,7 +285,6 @@ def test_external():
         yield external, os.path.join(test_dir, dir)
 
 def run_dir(dir):
-    print "Running test in %s" % dir
     static_app = StaticURLParser(dir)
     trans_app = TranscluderMiddleware(static_app)
     app = TestApp(trans_app)
@@ -182,4 +302,4 @@ def test_internal():
         yield run_dir, os.path.join(test_dir, dir)
 
 if __name__ == '__main__':
-    pass
+    test_parallel_gets() 

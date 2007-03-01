@@ -6,6 +6,7 @@ from transcluder.cookie_wrapper import *
 from wsgifilter.cache_utils import merge_cache_headers, parse_merged_etag
 from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key, locked
+import time 
 
 class TaskList:
     def __init__(self, poolsize=10):
@@ -15,13 +16,14 @@ class TaskList:
         self.next_task_list_index = 0
         self.threadpool = ThreadPool(poolsize, self)
 
-    def get(self):
+    def get(self):        
         self.cv.acquire()
         while 1:
             for list in self._fetchlists:
                 task = list.pop()
                 if task:
                     self.cv.release()
+                    print "about to send a task along to the pool: %s" % task
                     return task
             self.cv.wait()
 
@@ -43,6 +45,11 @@ class TaskList:
         self.cv.notify()
         self.cv.release() 
 
+    def notifyAll(self): 
+        self.cv.acquire()
+        self.cv.notifyAll()
+        self.cv.release() 
+
 RequestType = Enum('conditional_get', 'get')
 
 class FetchListItem(WorkRequest): 
@@ -56,11 +63,11 @@ class FetchListItem(WorkRequest):
         WorkRequest.__init__(self, self)
 
     def __call__(self): 
-        self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
+        self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url)) # XXX transcluder dependencey
 
         if self.request_type == RequestType.conditional_get:
             if 'HTTP_IF_NONE_MATCH' in self.environ:
-                etags = parse_merged_etag(self.environ['HTTP_IF_NONE_MATCH'], etag_prefix="merged_etag:")
+                etags = self.environ['transcluder.etags'] # XXX transcluder dependency
                 if etags.has_key(self.url):
                     self.environ['HTTP_IF_NONE_MATCH'] = etags[self.url]
         else:
@@ -78,7 +85,9 @@ class FetchListItem(WorkRequest):
 
     def archive_info(self): 
         return self.response
-    
+
+    def __str__(self):
+        return "FetchListItem(%s, %s)" % (self.url, self.request_type)
 
 PMState = Enum(
     'initial', 
@@ -156,6 +165,8 @@ class PageManager:
        
         self.tasklist.remove_list(self)
 
+        print "exiting is_modified..."
+
         assert self._state == PMState.not_modified or self._state == PMState.modified or self._state == PMState.done
         if self._state == PMState.not_modified: 
             return False
@@ -163,13 +174,15 @@ class PageManager:
         return True
 
     def fetch(self, url):
-
+        print "fetch(%s)" % url 
+        start = time.time()
         self._lock.acquire()
         try:        
-            if url in self.page_archive:
-                status, headers, body, parsed = self.page_archive[url]
-                if not status.startswith('304'):
-                    return self.page_archive[url]
+            if time.time() - start > 0.10: 
+                print "waited in fetch for %d" % time.time() - start 
+
+            if self.have_page_content(url):
+                return self.page_archive[url]
 
             if self._state == PMState.initial: 
                 self._init_speculative_gets()
@@ -186,16 +199,18 @@ class PageManager:
 
         if not_pending:
             #get it ourselves
+            print "handing %s on main thread" % url 
             fetch = FetchListItem(url, self.environ, 
                           RequestType.get, 
                           self)
             fetch()
             return self.page_archive[url]
 
+        print "main thread waiting for arrival of %s" % url 
         self._cv.acquire()
         try:
             while 1:
-                if url in self.page_archive:
+                if self.have_page_content(url): 
                     return self.page_archive[url]
                 self._cv.wait()
         finally:
@@ -204,7 +219,14 @@ class PageManager:
 
     @locked 
     def merge_headers_into(self, headers): 
-        assert self._state == PMState.done 
+        print "merge_headers_into, State = %s" % self._state
+        if self._state != PMState.done and self._state != PMState.not_modified: 
+            print "Page Archive: %s" % self.page_archive
+            print "Needed: %s" % self.needed 
+            print "Actual Deps: %s" % self.actual_deps 
+            print "Speculative Deps: %s" % self.speculative_dep_info
+        
+        assert self._state == PMState.done or self._state == PMState.not_modified 
 
         response_info = {} 
         cookies = {}
@@ -219,8 +241,10 @@ class PageManager:
         headers.append(('Set-Cookie', newcookie)) # replace? 
 
 
-    @locked 
+    @locked
     def add_conditional_get(self, url): 
+        print "issuing conditional get for ", url
+        
         self._fetchlist[0:0] = [FetchListItem(url, self.environ, 
                                              RequestType.conditional_get, 
                                              self)]
@@ -229,6 +253,7 @@ class PageManager:
 
     @locked 
     def add_get(self, url): 
+        print "issuing get for ", url
         self._fetchlist[0:0] = [FetchListItem(url, self.environ, 
                                              RequestType.get, 
                                              self)]
@@ -236,6 +261,7 @@ class PageManager:
             
     @locked
     def got_304(self, task):
+        print "got 304 for ", task.url
         assert task.url not in self.page_archive
         self.page_archive[task.url] = task.archive_info() 
 
@@ -261,11 +287,12 @@ class PageManager:
 
     def notify(self):
         self._cv.acquire()
-        self._cv.notify()
+        self._cv.notifyAll()
         self._cv.release()
         
     @locked 
     def got_200(self, task): 
+        print "got 200 for ", task.url
         url = task.url
         self.page_archive[url] = task.archive_info() 
         
@@ -287,7 +314,7 @@ class PageManager:
         self.speculative_dep_info[url] = dep_list
 
         for dep in dep_list:
-            if (not dep in self.page_archive and 
+            if (not self.have_page_content(dep) and 
                 not dep in self._pending_work and 
                 not dep in scheduled_urls): 
                 self.add_get(dep)
@@ -299,7 +326,7 @@ class PageManager:
             all_deps = self.get_all_deps(task.url)
             
             for dep in all_deps: 
-                if not dep in self.page_archive:
+                if not self.have_page_content(dep):
                     self.needed.add(dep)
                 else: 
                     self.actual_deps.add(dep)
@@ -312,6 +339,14 @@ class PageManager:
             self.tasklist.remove_list(self)
 
         self.notify()
+
+
+    def have_page_content(self, url): 
+        self._cv.acquire() 
+        try: 
+            return url in self.page_archive and not self.page_archive[url][0].startswith('304')
+        finally: 
+            self._cv.release()
 
     @locked 
     def get_all_deps(self, url): 
@@ -331,6 +366,8 @@ class PageManager:
 
     @locked 
     def begin_speculative_gets(self): 
+        print "begin speculative gets..." 
+
         if self._state == PMState.done:
             return
 
@@ -343,7 +380,7 @@ class PageManager:
         self.tasklist.put_list(self)
 
         self._state = PMState.get_pages
-        self.tasklist.notify() 
+        self.tasklist.notifyAll() 
 
     @locked 
     def _init_speculative_gets(self):         
@@ -363,22 +400,18 @@ class PageManager:
             if not url in self._pending_work: 
                 self.add_get(url)
 
+    @locked 
     def pop(self):
         """
         used by TaskList 
         """
-        if self._lock.acquire(blocking=False): 
-            try: 
-                if (self._state != PMState.done and 
-                    self._state != PMState.modified):
-                    if len(self._fetchlist):
-                        task = self._fetchlist.pop()
-                        self._pending_work.add(task.url)
-                        return task
-                    else: 
-                        return None 
-            finally: 
-                self._lock.release() 
-        else: 
-            return None 
+
+        if (self._state != PMState.done and 
+            self._state != PMState.modified):
+            if len(self._fetchlist):
+                task = self._fetchlist.pop()
+                self._pending_work.add(task.url)
+                return task
+            else: 
+                return None 
 

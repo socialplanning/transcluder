@@ -55,7 +55,6 @@ class Transcluder:
                 self.merge(target, subdoc, source_url)
 
             except Exception, message: 
-                traceback.print_exc()
                 self.attach_warning(target, "failed to retrieve %s (%s)" % 
                                (source_url, traceback.format_exc()))
 

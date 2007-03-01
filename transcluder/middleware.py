@@ -13,6 +13,7 @@ from transcluder import helpers
 from transcluder.transclude import Transcluder
 
 from wsgifilter.resource_fetcher import *
+from wsgifilter.cache_utils import parse_merged_etag
 from transcluder.cookie_wrapper import * 
 from transcluder.tasklist import PageManager, TaskList
 from transcluder.deptracker import DependencyTracker
@@ -66,8 +67,12 @@ class TranscluderMiddleware:
         tc.fetch = simple_fetch
 
         if is_conditional_get(environ) and not pm.is_modified():
-            start_response('304 Not Modified', [])
+            headers = [] 
+            pm.merge_headers_into(headers)
+            start_response('304 Not Modified', headers)
             return []
+        else: 
+            pm.begin_speculative_gets() 
 
         status, headers, body, parsed = pm.fetch(request_url)
 

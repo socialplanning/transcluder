@@ -21,6 +21,22 @@ def locked(func, *args, **kw):
         lock.release()
     return result
 
+@decorator
+def locked(func, *args, **kw):
+    lock = args[0]._lock
+
+    import time
+    start = time.time()
+    lock.acquire()
+    try:
+        if time.time() - start > 0.10:
+            print "waited %d" % time.time() - start
+        return func(*args, **kw)
+    finally:
+        lock.release()
+    
+
+
 class DependencyTracker: 
     def __init__(self): 
         self._deps = {}
