@@ -59,9 +59,10 @@ class FetchListItem(WorkRequest):
         self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
 
         if self.request_type == RequestType.conditional_get:
-            etags = parse_merged_etag(self.environ['HTTP_IF_NONE_MATCH'], etag_prefix="merged_etag:")
-            if etags.has_key(self.url):
-                self.environ['HTTP_IF_NONE_MATCH'] = etags[self.url]
+            if 'HTTP_IF_NONE_MATCH' in self.environ:
+                etags = parse_merged_etag(self.environ['HTTP_IF_NONE_MATCH'], etag_prefix="merged_etag:")
+                if etags.has_key(self.url):
+                    self.environ['HTTP_IF_NONE_MATCH'] = etags[self.url]
         else:
             if 'HTTP_IF_MODIFIED_SINCE' in self.environ:
                 del self.environ['HTTP_IF_MODIFIED_SINCE']
@@ -118,7 +119,7 @@ class PageManager:
         if (self._state == PMState.modified or self._state == PMState.done or 
             self._state == PMState.get_pages):
             return True
-        if self._state == PMState.unmodified:
+        if self._state == PMState.not_modified:
             return False
 
 
