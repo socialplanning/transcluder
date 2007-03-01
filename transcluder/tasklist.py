@@ -59,11 +59,9 @@ class FetchListItem(WorkRequest):
         self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
 
         if self.request_type == RequestType.conditional_get:
-            #XXX: need to write get_relevant_etag (or steal from wsgifilter/deli)
-            #etag = get_relevant_etag(self.url, self.environ)
-            etag = ''
-            if etag:
-                self.environ['HTTP_IF_NONE_MATCH'] = etag
+            etags = parse_merged_etag(self.environ['HTTP_IF_NONE_MATCH'], etag_prefix="merged_etag:")
+            if etags.has_key(self.url):
+                self.environ['HTTP_IF_NONE_MATCH'] = etags[self.url]
         else:
             if 'HTTP_IF_MODIFIED_SINCE' in self.environ:
                 del self.environ['HTTP_IF_MODIFIED_SINCE']
