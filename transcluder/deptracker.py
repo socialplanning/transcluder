@@ -30,7 +30,7 @@ def locked(func, *args, **kw):
     lock.acquire()
     try:
         if time.time() - start > 0.10:
-            print "waited %d" % time.time() - start
+            print "waited %s" % (time.time() - start)
         return func(*args, **kw)
     finally:
         lock.release()
