@@ -10,6 +10,7 @@ from paste.request import construct_url
 from paste.wsgilib import intercept_output
 from paste import httpheaders
 from transcluder.middleware import TranscluderMiddleware
+from transcluder.tasklist import TaskList
 from formencode.doctest_xml_compare import xml_compare
 from wsgifilter.fixtures.cache_fixture import CacheFixtureApp, CacheFixtureResponseInfo
 import traceback 
@@ -142,15 +143,15 @@ class PausingMiddleware:
         return self.app(environ, start_response)
 
 
-    
+the_tasklist = TaskList()
 def test_parallel_gets(): 
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
-    sleep_time = 0.5
+    sleep_time = 0.4
     cache_app = CacheFixtureApp()
     sleep_app = PausingMiddleware(cache_app, sleep_time)
-    transcluder = TranscluderMiddleware(sleep_app)
+    transcluder = TranscluderMiddleware(sleep_app, tasklist = the_tasklist)
     test_app = TestApp(transcluder)
 
     page_list = ['index.html', 'index2.html', 'page1.html', 'page2.html', 'page2_1.html', 'page3.html', 'page4.html']
@@ -161,31 +162,31 @@ def test_parallel_gets():
         pages[page].etag = page
     
     #load up the deptracker
-    print "**** parallel 1"
+    #print "**** parallel 1"
     start = time.time() 
     result = test_app.get('/index.html')
     end = time.time() 
-    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    #print "took %s sleep_times" % ((end - start) / sleep_time) 
     assert  2*sleep_time <= end - start < 3*sleep_time
 
     etag = header_value(result.headers, 'ETAG')
     assert etag is not None
 
     #test parallel fetch from correct tracked deps
-    print "**** parallel 2"
+    #print "**** parallel 2"
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
-    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    #print "took %s sleep_times" % ((end - start) / sleep_time) 
     assert  sleep_time <= end - start < 2*sleep_time
     assert result.status == 304
 
-    print "**** parallel 3"
+    #print "**** parallel 3"
     pages['page1.html'].etag = 'page1.new'
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})    
     end = time.time() 
-    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    #print "took %s sleep_times" % ((end - start) / sleep_time) 
 
     assert  2*sleep_time <= end - start < 3*sleep_time
     etag = header_value(result.headers, 'ETAG')
@@ -193,22 +194,22 @@ def test_parallel_gets():
     assert result.status == 200 
 
     # change the content of the index page, this will make it depend on page3 
-    print "**** parallel 4"
+    #print "**** parallel 4"
     cache_app.map_url('/index.html',pages['index2.html'])
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
-    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    #print "took %s sleep_times" % ((end - start) / sleep_time) 
     assert  2*sleep_time <= end - start < 3*sleep_time
 
     # change dependency to have a dependency 
-    print "**** parallel 5"
+    #print "**** parallel 5"
     cache_app.map_url('/page2.html', pages['page2_1.html'])
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
     
-    print "took %s sleep_times" % ((end - start) / sleep_time) 
+    #print "took %s sleep_times" % ((end - start) / sleep_time) 
     assert  2*sleep_time <= end - start < 3*sleep_time
     
     
@@ -306,10 +307,13 @@ if __name__ == '__main__':
     count = 0 
     ok = 0 
     while(1): 
-        print "\n\n\n\n******** RUN %s [%s sucesses] *********\n\n\n\n\n" % (count, ok)
+        #print "\n\n\n\n******** RUN %s [%s sucesses] *********\n\n\n\n\n" % (count, ok)
         try:
             test_parallel_gets() 
             ok+=1
-        except: 
+        except KeyboardInterrupt: 
+            the_tasklist.kill()
+            break
+        except:
             traceback.print_exc() 
         count+=1

@@ -31,6 +31,8 @@ def locked(func, *args, **kw):
     try:
         if time.time() - start > 0.10:
             print "waited %s on %s" % (time.time() - start, func)
+            if lock.has_attr('oldThread'):
+                print lock.oldThread
         return func(*args, **kw)
     finally:
         lock.release()

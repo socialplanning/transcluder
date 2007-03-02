@@ -8,6 +8,25 @@ from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key, locked
 import time 
 import traceback 
+import threading
+
+#note: does not work!!!
+class TracingRLock(object):
+    def __init__(self):
+#        self.oldThread = None
+#        self.currentThread = None
+        self._lock = RLock()
+    
+    def acquire(self, blocking = 1):
+        out = self._lock.acquire(blocking)
+#        self.oldThread = self.currentThread
+#        self.currentThread = threading.currentThread()
+        return out
+
+    def release(self):
+#        self.currentThread = None
+        self._lock.release()
+
 
 class TaskList:
     def __init__(self, poolsize=10):
@@ -15,18 +34,23 @@ class TaskList:
         self._lock = Lock()
         self.cv = Condition(self._lock)
         self.next_task_list_index = 0
+        self.alive = True
         self.threadpool = ThreadPool(poolsize, self)
+
+    def kill(self):
+        self.alive = False
+        self.notifyAll()
 
     def get(self):        
         self.cv.acquire()
-        while 1:
+        while self.alive:
             for list in self._fetchlists:
                 task = list.pop()
                 if task:
                     self.cv.release()
-                    print "about to send a task along to the pool: %s" % task
+                    pass #print "about to send a task along to the pool: %s" % task
                     return task
-            print "Thread sleeping for lack of work"
+            pass #print "Thread sleeping for lack of work"
             self.cv.wait()
 
 
@@ -44,9 +68,9 @@ class TaskList:
         self._fetchlists.remove(list)
 
     def notify(self): 
-        print "attempting to notify tasklist"
+        pass #print "attempting to notify tasklist"
         self.cv.acquire()
-        print "notify tasklist OK"
+        pass #print "notify tasklist OK"
         self.cv.notify()
         self.cv.release() 
 
@@ -66,14 +90,14 @@ class FetchList:
 
 
     def push(self, task): 
-        print "attempting to push %s" % task.url 
+        pass #print "attempting to push %s" % task.url 
         self._lock.acquire()
         try:
             if (not task.url in self._pending and 
                 not task.url in self._in_progress): 
                 self._tasks[0:0] = [task]
                 self._pending.add(task.url)
-                print "pushed %s" % task.url
+                pass #print "pushed %s" % task.url
                 pushed = True
             else:
                 pushed = False 
@@ -89,7 +113,7 @@ class FetchList:
             task = self._tasks.pop()
             self._pending.remove(task.url)
             self._in_progress.add(task.url)
-            print "popped %s" % task.url 
+            pass #print "popped %s" % task.url 
             return task 
         else: 
             return None
@@ -107,7 +131,7 @@ class FetchList:
     def completed(self, task): 
         assert (task.url in self._in_progress)
         self._in_progress.remove(task.url)
-        print "completed %s" % task.url
+        pass #print "completed %s" % task.url
 
     @locked 
     def claim(self, url): 
@@ -159,14 +183,14 @@ class FetchListItem(WorkRequest):
 
         self.response = self.page_manager.request(self.url, self.environ)
 
-        print "fetch of %s returned %s" % (self.url, self.response[0]) 
+        pass #print "fetch of %s returned %s" % (self.url, self.response[0]) 
 
         if self.response[0].startswith('304'):
             self.page_manager.got_304(self)
         else:
             self.page_manager.got_200(self)
 
-        print "finished FetchListItem(%s)" % self.url
+        pass #print "finished FetchListItem(%s)" % self.url
 
     def archive_info(self): 
         return self.response
@@ -202,7 +226,7 @@ class PageManager:
         self._needed = Set() 
         self._actual_deps = Set()
 
-        self._lock = RLock()
+        self._lock = TracingRLock()
         self._cv = Condition(self._lock)
 
         self._state = PMState.initial 
@@ -246,17 +270,17 @@ class PageManager:
             task = self.fetchlist.pop()
             if task:
                 self._cv.release()
-                print "main thread is checking modification of %s" % task.url
+                pass #print "main thread is checking modification of %s" % task.url
                 task()
             else: 
                 if self._state == PMState.check_modification: 
-                    print "main thread is waiting for modification info..." 
+                    pass #print "main thread is waiting for modification info..." 
                     self._cv.wait() 
                 self._cv.release()
 
         self.tasklist.remove_list(self.fetchlist)
 
-        print "exiting is_modified..."
+        pass #print "exiting is_modified..."
 
         assert (self._state == PMState.not_modified or 
                 self._state == PMState.modified or 
@@ -268,12 +292,12 @@ class PageManager:
         return True
 
     def fetch(self, url):
-        print "fetch(%s)" % url 
+        pass #print "fetch(%s)" % url 
         start = time.time()
         self._lock.acquire()
         try:        
             if time.time() - start > 0.10: 
-                print "waited in fetch for %d" % time.time() - start 
+                pass #print "waited in fetch for %d" % time.time() - start 
 
             if self.have_page_content(url):
                 return self._page_archive[url]
@@ -287,15 +311,15 @@ class PageManager:
 
         if should_fetch:
             #get it ourselves
-            print "handing %s on main thread" % url 
+            pass #print "handing %s on main thread" % url 
             fetch = FetchListItem(url, self._environ, 
                           RequestType.get, 
                           self)
             fetch()
-            print "main thread completed %s" % url 
+            pass #print "main thread completed %s" % url 
             return self._page_archive[url]
 
-        print "main thread waiting for arrival of %s" % url 
+        pass #print "main thread waiting for arrival of %s" % url 
         self._cv.acquire()
         try:
             while 1:
@@ -308,12 +332,12 @@ class PageManager:
 
     @locked 
     def merge_headers_into(self, headers): 
-        print "merge_headers_into, State = %s" % self._state
+        pass #print "merge_headers_into, State = %s" % self._state
         if self._state != PMState.done and self._state != PMState.not_modified: 
-            print "Page Archive: %s" % self._page_archive
-            print "Needed: %s" % self._needed 
-            print "Actual Deps: %s" % self._actual_deps 
-            print "Speculative Deps: %s" % self._speculative_dep_info
+            pass #print "Page Archive: %s" % self._page_archive
+            pass #print "Needed: %s" % self._needed 
+            pass #print "Actual Deps: %s" % self._actual_deps 
+            pass #print "Speculative Deps: %s" % self._speculative_dep_info
         
         assert self._state == PMState.done or self._state == PMState.not_modified 
 
@@ -332,7 +356,7 @@ class PageManager:
 
     @locked
     def add_conditional_get(self, url): 
-        print "issuing conditional get for ", url
+        pass #print "issuing conditional get for ", url
         
         if not self.have_archive(url): 
             self.fetchlist.push(FetchListItem(url, self._environ, 
@@ -343,14 +367,14 @@ class PageManager:
     @locked 
     def add_get(self, url): 
         if not self.have_page_content(url): 
-            print "issuing get for ", url
+            pass #print "issuing get for ", url
             self.fetchlist.push(FetchListItem(url, self._environ, 
                                               RequestType.get, 
                                               self))
             
     @locked
     def got_304(self, task):
-        print "got 304 for ", task.url
+        pass #print "got 304 for ", task.url
         assert task.url not in self._page_archive
         self._page_archive[task.url] = task.archive_info() 
 
@@ -359,10 +383,10 @@ class PageManager:
         if self._state != PMState.check_modification: 
             assert(self._state != PMState.not_modified)
             if self._state == PMState.get_pages: 
-                print "reissue %s as GET" % task.url
+                pass #print "reissue %s as GET" % task.url
                 self.add_get(task.url)
                 self.notify() 
-                print "finished reissue."                
+                pass #print "finished reissue."                
                 return 
 
         self.expected_mod_responses -= 1 
@@ -380,17 +404,15 @@ class PageManager:
 
     @locked 
     def notify(self):
-        print "PageManager::notify()"
-        self._cv.acquire()
+        pass #print "PageManager::notify()"
         self._cv.notifyAll()
-        self._cv.release()
         
     @locked 
     def got_200(self, task): 
-        print "got 200 for ", task.url
+        pass #print "got 200 for ", task.url
         self._page_archive[task.url] = task.archive_info() 
         
-        print "updating dependencies"
+        pass #print "updating dependencies"
         # update dependencies 
         status, headers, body, parsed = task.archive_info() 
         resource = make_resource_key(task.url, task.environ)
@@ -406,20 +428,20 @@ class PageManager:
 
         self._speculative_dep_info[task.url] = dep_list
 
-        print "issuing fetches for dependencies" 
+        pass #print "issuing fetches for dependencies" 
         for dep in dep_list:
             self.add_get(dep)
 
-        print "checking if %s is needed" % task.url 
+        pass #print "checking if %s is needed" % task.url 
         if task.url in self._needed: 
             self._got_needed(task.url) 
 
-        print "notifying fetchlist of completion..."
+        pass #print "notifying fetchlist of completion..."
         self.fetchlist.completed(task)
 
-        print "notifying self of archived copy of %s" % task.url 
+        pass #print "notifying self of archived copy of %s" % task.url 
         self.notify()
-        print "completed got_200 for %s" % task.url
+        pass #print "completed got_200 for %s" % task.url
 
     def _got_needed(self, url): 
         assert url in self._needed 
@@ -436,7 +458,7 @@ class PageManager:
                 self._actual_deps.add(dep)
 
         if len(self._needed) == 0:
-            print "entering the done state..."
+            pass #print "entering the done state..."
             self._state = PMState.done
             self.tasklist.remove_list(self.fetchlist)
 
@@ -444,20 +466,20 @@ class PageManager:
 
     @locked
     def have_page_content(self, url): 
-        print "entering have page content"
+        pass #print "entering have page content"
         self._cv.acquire() 
         try: 
-            print "returning from have page content"
+            pass #print "returning from have page content"
             return url in self._page_archive and not self._page_archive[url][0].startswith('304')
         finally: 
             self._cv.release()
 
     @locked
     def have_archive(self, url): 
-        print "entering have page archive"
+        pass #print "entering have page archive"
         self._cv.acquire() 
         try: 
-            print "returning from have page archive"
+            pass #print "returning from have page archive"
             return url in self._page_archive
         finally: 
             self._cv.release()
@@ -480,7 +502,7 @@ class PageManager:
 
     @locked 
     def begin_speculative_gets(self): 
-        print "begin speculative gets..." 
+        pass #print "begin speculative gets..." 
 
         if self._state == PMState.done:
             return
