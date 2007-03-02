@@ -252,6 +252,7 @@ class PageManager:
                 if self._state == PMState.check_modification: 
                     print "main thread is waiting for modification info..." 
                     self._cv.wait() 
+                self._cv.release()
 
         self.tasklist.remove_list(self.fetchlist)
 
