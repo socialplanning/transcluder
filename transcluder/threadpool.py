@@ -89,10 +89,11 @@ class WorkerThread(threading.Thread):
                 break 
             # thread blocks here, if queue empty
             request = self.workRequestQueue.get()
-            try:
-                request.callable(*request.args, **request.kwds)
-            except:
-                request.exception = True
+            if request:
+                try:
+                    request.callable(*request.args, **request.kwds)
+                except:
+                    request.exception = True
 
     def dismiss(self):
         """Sets a flag to tell the thread to exit when done with current job.

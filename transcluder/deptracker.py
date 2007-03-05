@@ -23,7 +23,10 @@ def locked(func, *args, **kw):
 
 @decorator
 def locked(func, *args, **kw):
-    lock = args[0]._lock
+    if hasattr(args[0], 'cv'):
+        lock = args[0].cv
+    else:
+        lock = args[0]._lock
 
     import time
     start = time.time()

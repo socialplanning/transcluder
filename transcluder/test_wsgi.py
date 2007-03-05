@@ -139,7 +139,10 @@ class PausingMiddleware:
         self.sleep_time = sleep_time
 
     def __call__(self, environ, start_response): 
-        time.sleep(self.sleep_time)
+        try:
+            time.sleep(self.sleep_time)
+        except KeyboardInterrupt:
+            return self.app(environ, start_response)
         return self.app(environ, start_response)
 
 
@@ -148,11 +151,15 @@ def test_parallel_gets():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
-    sleep_time = 0.4
+    sleep_time = 0.1
     cache_app = CacheFixtureApp()
     sleep_app = PausingMiddleware(cache_app, sleep_time)
     transcluder = TranscluderMiddleware(sleep_app, tasklist = the_tasklist)
     test_app = TestApp(transcluder)
+
+    def test_app_get(resource, **args):
+        the_tasklist.init()
+        return test_app.get(resource, **args)
 
     page_list = ['index.html', 'index2.html', 'page1.html', 'page2.html', 'page2_1.html', 'page3.html', 'page4.html']
     pages = {}
@@ -164,10 +171,10 @@ def test_parallel_gets():
     #load up the deptracker
     #print "**** parallel 1"
     start = time.time() 
-    result = test_app.get('/index.html')
+    result = test_app_get('/index.html')
     end = time.time() 
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
-    assert  2*sleep_time <= end - start < 3*sleep_time
+    assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint()
 
     etag = header_value(result.headers, 'ETAG')
     assert etag is not None
@@ -175,20 +182,20 @@ def test_parallel_gets():
     #test parallel fetch from correct tracked deps
     #print "**** parallel 2"
     start = time.time() 
-    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    result = test_app_get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
-    assert  sleep_time <= end - start < 2*sleep_time
+    assert  sleep_time <= end - start < 2*sleep_time, the_tasklist.doprint()
     assert result.status == 304
 
     #print "**** parallel 3"
     pages['page1.html'].etag = 'page1.new'
     start = time.time() 
-    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})    
+    result = test_app_get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})    
     end = time.time() 
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
 
-    assert  2*sleep_time <= end - start < 3*sleep_time
+    assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint()
     etag = header_value(result.headers, 'ETAG')
 
     assert result.status == 200 
@@ -197,20 +204,20 @@ def test_parallel_gets():
     #print "**** parallel 4"
     cache_app.map_url('/index.html',pages['index2.html'])
     start = time.time() 
-    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    result = test_app_get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
-    assert  2*sleep_time <= end - start < 3*sleep_time
+    assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint()
 
     # change dependency to have a dependency 
     #print "**** parallel 5"
     cache_app.map_url('/page2.html', pages['page2_1.html'])
     start = time.time() 
-    result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    result = test_app_get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
     
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
-    assert  2*sleep_time <= end - start < 3*sleep_time
+    assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint()
     
     
 
@@ -304,10 +311,12 @@ def test_internal():
         yield run_dir, os.path.join(test_dir, dir)
 
 if __name__ == '__main__':
+    print os.getpid()
     count = 0 
     ok = 0 
     while(1): 
         #print "\n\n\n\n******** RUN %s [%s sucesses] *********\n\n\n\n\n" % (count, ok)
+        print "RUN %s [%s sucesses]" % (count, ok)
         try:
             test_parallel_gets() 
             ok+=1

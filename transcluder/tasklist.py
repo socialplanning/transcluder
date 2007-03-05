@@ -10,23 +10,45 @@ import time
 import traceback 
 import threading
 
-#note: does not work!!!
-class TracingRLock(object):
-    def __init__(self):
-#        self.oldThread = None
-#        self.currentThread = None
-        self._lock = RLock()
+def timeit(func, *args):
+    start = time.time()
+    out = func(*args)
+    end = time.time()
+    if end - start > 2.10:
+        print "too long in %s: %s" % (func, end - start)
+        import traceback
+        print "".join(traceback.format_stack()[-5:-2])
+    return out
+
+class TracingCondition(object):
+    def __init__(self, lock = None):
+        self.oldThread = None
+        self.currentThread = None
+        if not lock:
+            lock = Lock()
+        self._condition = Condition(lock)
     
     def acquire(self, blocking = 1):
-        out = self._lock.acquire(blocking)
-#        self.oldThread = self.currentThread
-#        self.currentThread = threading.currentThread()
+#        print "acquire"
+        out = timeit(self._condition.acquire, blocking)
+        self.oldThread = self.currentThread
+        self.currentThread = threading.currentThread()
         return out
 
     def release(self):
-#        self.currentThread = None
-        self._lock.release()
+#        print "release"
+        self.currentThread = None
+        return self._condition.release()
 
+    def wait(self):
+        #print "wait"
+        timeit(self._condition.wait)
+    
+    def notify(self):
+        return self._condition.notify()
+
+    def notifyAll(self):
+        return self._condition.notifyAll()
 
 class TaskList:
     def __init__(self, poolsize=10):
@@ -37,18 +59,30 @@ class TaskList:
         self.alive = True
         self.threadpool = ThreadPool(poolsize, self)
 
+    def init(self):
+        self.start = time.time()
+        self.printxbuf = []
+
+    def printx(self, *stuff):
+        now = time.time()
+        self.printxbuf.append((now - self.start, stuff))
+
+    def doprint(self):
+        for xtime, line in self.printxbuf:
+            print xtime, " ".join (line)
+
     def kill(self):
         self.alive = False
         self.notifyAll()
 
-    def get(self):        
+    def get(self):     
         self.cv.acquire()
         while self.alive:
             for list in self._fetchlists:
                 task = list.pop()
                 if task:
                     self.cv.release()
-                    pass #print "about to send a task along to the pool: %s" % task
+                    self.printx("about to send a task along to the pool: %s" % task)
                     return task
             pass #print "Thread sleeping for lack of work"
             self.cv.wait()
@@ -61,6 +95,8 @@ class TaskList:
             list.task_list_index = self.next_task_list_index
             self.next_task_list_index += 1
         self._fetchlists.insert(list)
+        self.printx("fetchlist at insert time contains %s" % list._tasks)
+        #about to notify
         self.cv.notifyAll() 
 
     @locked
@@ -91,7 +127,7 @@ class FetchList:
 
     def push(self, task): 
         pass #print "attempting to push %s" % task.url 
-        self._lock.acquire()
+        timeit(self._lock.acquire)
         try:
             if (not task.url in self._pending and 
                 not task.url in self._in_progress): 
@@ -126,6 +162,16 @@ class FetchList:
     def clear(self): 
         self._tasks = []
         self._pending = Set()
+
+    @locked
+    def remove_if_mods(self):
+        tasks = self._tasks
+        self._tasks = []
+        for task in tasks:
+            if self._tasks.request_type != RequestType.conditional_get:
+                self._tasks.append(task)
+            else:
+                self._pending.remove(task.url)
 
     @locked 
     def completed(self, task): 
@@ -162,6 +208,7 @@ class FetchListItem(WorkRequest):
 
     def __call__(self):
         try: 
+            self.page_manager.tasklist.printx("actually doing fetch for %s" % self.url)
             self._do_fetch() 
         except: 
             traceback.print_exc() 
@@ -226,8 +273,8 @@ class PageManager:
         self._needed = Set() 
         self._actual_deps = Set()
 
-        self._lock = TracingRLock()
-        self._cv = Condition(self._lock)
+        self._lock = RLock()#TracingRLock()
+        self.cv = TracingCondition(self._lock)
 
         self._state = PMState.initial 
 
@@ -266,21 +313,21 @@ class PageManager:
             self.add_conditional_get(url)
 
         while self._state == PMState.check_modification:
-            self._cv.acquire() 
+            self.cv.acquire() 
             task = self.fetchlist.pop()
             if task:
-                self._cv.release()
-                pass #print "main thread is checking modification of %s" % task.url
+                self.cv.release()
+                self.tasklist.printx("main thread is checking modification of %s" % task.url)
                 task()
             else: 
                 if self._state == PMState.check_modification: 
-                    pass #print "main thread is waiting for modification info..." 
-                    self._cv.wait() 
-                self._cv.release()
+                    self.tasklist.printx("main thread is waiting for modification info...")
+                    self.cv.wait() 
+                self.cv.release()
 
         self.tasklist.remove_list(self.fetchlist)
 
-        pass #print "exiting is_modified..."
+        self.tasklist.printx("exiting is_modified...")
 
         assert (self._state == PMState.not_modified or 
                 self._state == PMState.modified or 
@@ -292,42 +339,42 @@ class PageManager:
         return True
 
     def fetch(self, url):
-        pass #print "fetch(%s)" % url 
-        start = time.time()
-        self._lock.acquire()
-        try:        
-            if time.time() - start > 0.10: 
-                pass #print "waited in fetch for %d" % time.time() - start 
+        self.tasklist.printx("fetch(%s)" % url)
 
+        self.cv.acquire()
+        try:        
             if self.have_page_content(url):
                 return self._page_archive[url]
 
+            self.tasklist.printx("don't have page %s, and in state %s" % (url, self._state))
+            
             if self._state == PMState.initial: 
                 self._init_speculative_gets()
 
             should_fetch = self.fetchlist.claim(url)
         finally:
-            self._lock.release()
+            self.cv.release()
 
         if should_fetch:
             #get it ourselves
-            pass #print "handing %s on main thread" % url 
+            self.tasklist.printx("handing %s on main thread" % url)
             fetch = FetchListItem(url, self._environ, 
                           RequestType.get, 
                           self)
             fetch()
-            pass #print "main thread completed %s" % url 
+            self.tasklist.printx("main thread completed %s" % url)
             return self._page_archive[url]
 
-        pass #print "main thread waiting for arrival of %s" % url 
-        self._cv.acquire()
+        self.tasklist.printx("main thread waiting for arrival of %s" % url)
+        self.cv.acquire()
         try:
             while 1:
                 if self.have_page_content(url): 
+                    self.tasklist.printx("main thread finally got %s" % url)
                     return self._page_archive[url]
-                self._cv.wait()
+                self.cv.wait()
         finally:
-            self._cv.release()
+            self.cv.release()
     
 
     @locked 
@@ -367,14 +414,16 @@ class PageManager:
     @locked 
     def add_get(self, url): 
         if not self.have_page_content(url): 
-            pass #print "issuing get for ", url
+            self.tasklist.printx("issuing get for %s" % url)
             self.fetchlist.push(FetchListItem(url, self._environ, 
                                               RequestType.get, 
                                               self))
+        else:
+            self.tasklist.printx("not issuing get for %s because %s is in page cache" % (url, self._page_archive[url]))
             
     @locked
     def got_304(self, task):
-        pass #print "got 304 for ", task.url
+        self.tasklist.printx("got 304 for %s" % task.url)
         assert task.url not in self._page_archive
         self._page_archive[task.url] = task.archive_info() 
 
@@ -382,7 +431,7 @@ class PageManager:
 
         if self._state != PMState.check_modification: 
             assert(self._state != PMState.not_modified)
-            if self._state == PMState.get_pages: 
+            if self._state == PMState.get_pages or self._state == PMState.modified: 
                 pass #print "reissue %s as GET" % task.url
                 self.add_get(task.url)
                 self.notify() 
@@ -405,7 +454,7 @@ class PageManager:
     @locked 
     def notify(self):
         pass #print "PageManager::notify()"
-        self._cv.notifyAll()
+        self.cv.notifyAll()
         
     @locked 
     def got_200(self, task): 
@@ -467,22 +516,22 @@ class PageManager:
     @locked
     def have_page_content(self, url): 
         pass #print "entering have page content"
-        self._cv.acquire() 
+        self.cv.acquire() 
         try: 
             pass #print "returning from have page content"
             return url in self._page_archive and not self._page_archive[url][0].startswith('304')
         finally: 
-            self._cv.release()
+            self.cv.release()
 
     @locked
     def have_archive(self, url): 
         pass #print "entering have page archive"
-        self._cv.acquire() 
+        self.cv.acquire() 
         try: 
             pass #print "returning from have page archive"
             return url in self._page_archive
         finally: 
-            self._cv.release()
+            self.cv.release()
 
     @locked 
     def get_all_deps(self, url): 
@@ -502,7 +551,6 @@ class PageManager:
 
     @locked 
     def begin_speculative_gets(self): 
-        pass #print "begin speculative gets..." 
 
         if self._state == PMState.done:
             return
@@ -525,16 +573,21 @@ class PageManager:
                self._state == PMState.check_modification)
 
         self._state = PMState.modified
-        self.fetchlist.clear()
+        self.fetchlist.remove_if_mods()
+        self.tasklist.printx("fetchlist is %s" % ", ".join(map(str, self.fetchlist._tasks)))
 
         self._speculative_dep_info = {} 
         
         self._needed = Set([self._request_url]) 
 
-
+        self.tasklist.printx("init speculative gets for %s " % self._request_url)
         self.add_get(self._request_url)        
         urls = self.deptracker.get_all_deps(self._root_resource)
+        self.tasklist.printx("dep list is %s for %s" % (urls, self._root_resource))
         for url in urls: 
             self.add_get(url)
+        self.tasklist.printx("done init speculative gets...")
+        self.tasklist.printx("fetchlist is %s" % ", ".join(map(str, self.fetchlist._tasks)))
+
 
 
