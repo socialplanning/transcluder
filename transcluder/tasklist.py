@@ -5,7 +5,8 @@ from avl import new as avl
 from transcluder.cookie_wrapper import * 
 from wsgifilter.cache_utils import merge_cache_headers, parse_merged_etag
 from transcluder.threadpool import WorkRequest, ThreadPool
-from transcluder.deptracker import make_resource_key, locked
+from transcluder.deptracker import make_resource_key
+from locked import locked
 import time 
 import traceback 
 import threading
@@ -51,7 +52,7 @@ class TracingCondition(object):
         return self._condition.notifyAll()
 
 class TaskList:
-    def __init__(self, poolsize=10):
+    def __init__(self, poolsize=30):
         self._fetchlists = avl()
         self._lock = Lock()
         self.cv = Condition(self._lock)
@@ -59,17 +60,22 @@ class TaskList:
         self.alive = True
         self.threadpool = ThreadPool(poolsize, self)
 
-    def init(self):
+    def init(self, header=None):
+        import sys
+        sys.stdout.flush()
         self.start = time.time()
         self.printxbuf = []
+        if header:
+            self.printx(header)
 
     def printx(self, *stuff):
         now = time.time()
         self.printxbuf.append((now - self.start, stuff))
 
-    def doprint(self):
+    def doprint(self, *args):
         for xtime, line in self.printxbuf:
             print xtime, " ".join (line)
+        print " ".join(map(str, args))
 
     def kill(self):
         self.alive = False
@@ -90,7 +96,7 @@ class TaskList:
 
     @locked
     def put_list(self, list):        
-        assert list not in self._fetchlists
+        #assert list not in self._fetchlists
         if not hasattr(list, 'task_list_index'):
             list.task_list_index = self.next_task_list_index
             self.next_task_list_index += 1
@@ -168,7 +174,7 @@ class FetchList:
         tasks = self._tasks
         self._tasks = []
         for task in tasks:
-            if self._tasks.request_type != RequestType.conditional_get:
+            if task.request_type != RequestType.conditional_get:
                 self._tasks.append(task)
             else:
                 self._pending.remove(task.url)
@@ -273,8 +279,8 @@ class PageManager:
         self._needed = Set() 
         self._actual_deps = Set()
 
-        self._lock = RLock()#TracingRLock()
-        self.cv = TracingCondition(self._lock)
+        self._lock = RLock()
+        self.cv = Condition(self._lock)
 
         self._state = PMState.initial 
 
@@ -344,6 +350,7 @@ class PageManager:
         self.cv.acquire()
         try:        
             if self.have_page_content(url):
+                self.tasklist.printx("returning from archive")
                 return self._page_archive[url]
 
             self.tasklist.printx("don't have page %s, and in state %s" % (url, self._state))
@@ -365,6 +372,7 @@ class PageManager:
             self.tasklist.printx("main thread completed %s" % url)
             return self._page_archive[url]
 
+        #otherwise, wait for it
         self.tasklist.printx("main thread waiting for arrival of %s" % url)
         self.cv.acquire()
         try:
@@ -423,7 +431,7 @@ class PageManager:
             
     @locked
     def got_304(self, task):
-        self.tasklist.printx("got 304 for %s" % task.url)
+        self.tasklist.printx("got 304 for %s in state %s" % (task.url, self._state))
         assert task.url not in self._page_archive
         self._page_archive[task.url] = task.archive_info() 
 
@@ -458,7 +466,7 @@ class PageManager:
         
     @locked 
     def got_200(self, task): 
-        pass #print "got 200 for ", task.url
+        self.tasklist.printx("got 200 for %s" % task.url)
         self._page_archive[task.url] = task.archive_info() 
         
         pass #print "updating dependencies"
@@ -493,6 +501,7 @@ class PageManager:
         pass #print "completed got_200 for %s" % task.url
 
     def _got_needed(self, url): 
+        self.tasklist.printx("got_needed %s" % url)
         assert url in self._needed 
 
         self._needed.remove(url)

@@ -5,7 +5,8 @@ import lxmlutils
 from transcluder import helpers 
 from transcluder import uritemplates
 import traceback 
-
+from threading import Lock
+from transcluder.locked import locked
 
 class Transcluder: 
 
@@ -14,6 +15,11 @@ class Transcluder:
         self.variables = variables 
         self.fetch = fetch 
         self.should_recurse = should_recurse
+        self._lock = Lock()
+
+    @locked
+    def xpath(self, document, path):
+        return document.xpath(path)
 
     def transclude(self, document, document_url): 
         """
@@ -33,7 +39,7 @@ class Transcluder:
           the url given. 
         """
 
-        target_links = document.xpath("//a[@rel='include']")
+        target_links = self.xpath(document, "//a[@rel='include']")
         for target in target_links: 
             source_url = self.get_include_url(target, document_url) 
 
@@ -64,7 +70,7 @@ class Transcluder:
 
         deps = Set() 
 
-        target_links = document.xpath("//a[@rel='include']")
+        target_links = self.xpath(document, "//a[@rel='include']")
         for target in target_links: 
             source_url = self.get_include_url(target, document_url)
 
@@ -91,7 +97,7 @@ class Transcluder:
         fragment = urlparse.urlparse(source_url)[5]
 
         if len(fragment) > 0:                 
-            els = subdoc.xpath("//*[@id='%s']" % fragment)
+            els = self.xpath(subdoc, "//*[@id='%s']" % fragment)
 
             if els is None or len(els) == 0: 
                 self.attach_warning(target, 
@@ -100,7 +106,7 @@ class Transcluder:
                 return
             lxmlutils.replace_element(target, els[0])
         else: 
-            lxmlutils.replace_many(target, subdoc.xpath('//body/child::node()'))
+            lxmlutils.replace_many(target, self.xpath(subdoc, '//body/child::node()'))
 
 
     def get_include_url(self, target, document_url): 

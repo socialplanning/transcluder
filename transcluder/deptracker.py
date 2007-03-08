@@ -1,6 +1,6 @@
 from sets import Set
 from threading import RLock 
-from decorator import decorator
+from transcluder.locked import locked
 from transcluder.cookie_wrapper import get_relevant_cookies, make_cookie_string
 
 def make_resource_key(url, environ): 
@@ -9,38 +9,6 @@ def make_resource_key(url, environ):
         cookies = get_relevant_cookies(environ['transcluder.incookies'], url)
 
     return (url, make_cookie_string(cookies))
-
-
-@decorator
-def locked(func, *args, **kw):
-    lock = args[0]._lock
-    lock.acquire()
-    try:
-        result = func(*args, **kw)
-    finally:
-        lock.release()
-    return result
-
-@decorator
-def locked(func, *args, **kw):
-    if hasattr(args[0], 'cv'):
-        lock = args[0].cv
-    else:
-        lock = args[0]._lock
-
-    import time
-    start = time.time()
-    lock.acquire()
-    try:
-        if time.time() - start > 0.10:
-            print "waited %s on %s" % (time.time() - start, func)
-            if lock.has_attr('oldThread'):
-                print lock.oldThread
-        return func(*args, **kw)
-    finally:
-        lock.release()
-    
-
 
 class DependencyTracker: 
     def __init__(self): 
