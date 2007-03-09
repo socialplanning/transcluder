@@ -51,77 +51,6 @@ class TracingCondition(object):
     def notifyAll(self):
         return self._condition.notifyAll()
 
-class TaskList:
-    def __init__(self, poolsize=30):
-        self._fetchlists = avl()
-        self._lock = Lock()
-        self.cv = Condition(self._lock)
-        self.next_task_list_index = 0
-        self.alive = True
-        self.threadpool = ThreadPool(poolsize, self)
-
-    def init(self, header=None):
-        import sys
-        sys.stdout.flush()
-        self.start = time.time()
-        self.printxbuf = []
-        if header:
-            self.printx(header)
-
-    def printx(self, *stuff):
-        now = time.time()
-        self.printxbuf.append((now - self.start, stuff))
-
-    def doprint(self, *args):
-        for xtime, line in self.printxbuf:
-            print xtime, " ".join (line)
-        print " ".join(map(str, args))
-
-    def kill(self):
-        self.alive = False
-        self.notifyAll()
-
-    def get(self):     
-        self.cv.acquire()
-        while self.alive:
-            for list in self._fetchlists:
-                task = list.pop()
-                if task:
-                    self.cv.release()
-                    self.printx("about to send a task along to the pool: %s" % task)
-                    return task
-            pass #print "Thread sleeping for lack of work"
-            self.cv.wait()
-
-
-    @locked
-    def put_list(self, list):        
-        #assert list not in self._fetchlists
-        if not hasattr(list, 'task_list_index'):
-            list.task_list_index = self.next_task_list_index
-            self.next_task_list_index += 1
-        self._fetchlists.insert(list)
-        self.printx("fetchlist at insert time contains %s" % list._tasks)
-        #about to notify
-        self.cv.notifyAll() 
-
-    @locked
-    def remove_list(self, list):
-        self._fetchlists.remove(list)
-
-    def notify(self): 
-        pass #print "attempting to notify tasklist"
-        self.cv.acquire()
-        pass #print "notify tasklist OK"
-        self.cv.notify()
-        self.cv.release() 
-
-    def notifyAll(self): 
-        self.cv.acquire()
-        self.cv.notifyAll()
-        self.cv.release() 
-
-
 class FetchList: 
     def __init__(self, tasklist): 
         self.tasklist = tasklist
@@ -600,3 +529,73 @@ class PageManager:
 
 
 
+class TaskList:
+    pagemanager = PageManager
+    def __init__(self, poolsize=30):
+        self._fetchlists = avl()
+        self._lock = Lock()
+        self.cv = Condition(self._lock)
+        self.next_task_list_index = 0
+        self.alive = True
+        self.threadpool = ThreadPool(poolsize, self)
+
+    def init(self, header=None):
+        import sys
+        sys.stdout.flush()
+        self.start = time.time()
+        self.printxbuf = []
+        if header:
+            self.printx(header)
+
+    def printx(self, *stuff):
+        now = time.time()
+        self.printxbuf.append((now - self.start, stuff))
+
+    def doprint(self, *args):
+        for xtime, line in self.printxbuf:
+            print xtime, " ".join (line)
+        print " ".join(map(str, args))
+
+    def kill(self):
+        self.alive = False
+        self.notifyAll()
+
+    def get(self):     
+        self.cv.acquire()
+        while self.alive:
+            for list in self._fetchlists:
+                task = list.pop()
+                if task:
+                    self.cv.release()
+                    self.printx("about to send a task along to the pool: %s" % task)
+                    return task
+            pass #print "Thread sleeping for lack of work"
+            self.cv.wait()
+
+
+    @locked
+    def put_list(self, list):        
+        #assert list not in self._fetchlists
+        if not hasattr(list, 'task_list_index'):
+            list.task_list_index = self.next_task_list_index
+            self.next_task_list_index += 1
+        self._fetchlists.insert(list)
+        self.printx("fetchlist at insert time contains %s" % list._tasks)
+        #about to notify
+        self.cv.notifyAll() 
+
+    @locked
+    def remove_list(self, list):
+        self._fetchlists.remove(list)
+
+    def notify(self): 
+        pass #print "attempting to notify tasklist"
+        self.cv.acquire()
+        pass #print "notify tasklist OK"
+        self.cv.notify()
+        self.cv.release() 
+
+    def notifyAll(self): 
+        self.cv.acquire()
+        self.cv.notifyAll()
+        self.cv.release() 

@@ -10,7 +10,7 @@ from paste.request import construct_url
 from paste.wsgilib import intercept_output
 from paste import httpheaders
 from transcluder.middleware import TranscluderMiddleware
-from transcluder.tasklist import TaskList
+from transcluder.tasklist_pc import TaskList
 from formencode.doctest_xml_compare import xml_compare
 from wsgifilter.fixtures.cache_fixture import CacheFixtureApp, CacheFixtureResponseInfo
 import traceback 
@@ -151,7 +151,7 @@ def test_parallel_gets():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
-    sleep_time = 1
+    sleep_time = 0.01
     cache_app = CacheFixtureApp()
     sleep_app = PausingMiddleware(cache_app, sleep_time)
     transcluder = TranscluderMiddleware(sleep_app, tasklist = the_tasklist)

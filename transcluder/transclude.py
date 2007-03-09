@@ -9,13 +9,13 @@ from threading import Lock
 from transcluder.locked import locked
 
 class Transcluder: 
-
+    _lock = Lock()
     def __init__(self, variables, fetch, 
                  should_recurse=helpers.always_recurse): 
         self.variables = variables 
         self.fetch = fetch 
         self.should_recurse = should_recurse
-        self._lock = Lock()
+        self._lock = Transcluder._lock
 
     @locked
     def xpath(self, document, path):

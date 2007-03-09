@@ -15,7 +15,7 @@ from transcluder.transclude import Transcluder
 from wsgifilter.resource_fetcher import *
 from wsgifilter.cache_utils import parse_merged_etag
 from transcluder.cookie_wrapper import * 
-from transcluder.tasklist import PageManager, TaskList
+from transcluder.tasklist_pc import PageManager, TaskList
 from transcluder.deptracker import DependencyTracker
 
 def is_conditional_get(environ):
@@ -57,7 +57,7 @@ class TranscluderMiddleware:
         
         tc = Transcluder(variables, None, should_recurse=self.recursion_predicate)
 
-        pm = PageManager(request_url, environ, self.deptracker, tc.find_dependencies, self.tasklist, self.etree_subrequest)
+        pm = self.tasklist.pagemanager(request_url, environ, self.deptracker, tc.find_dependencies, self.tasklist, self.etree_subrequest)
         def simple_fetch(url):
             status, headers, body, parsed = pm.fetch(url)
             if status.startswith('200'):
