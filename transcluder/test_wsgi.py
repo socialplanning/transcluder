@@ -151,7 +151,7 @@ def test_parallel_gets():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
-    sleep_time = 0.01
+    sleep_time = 0.1
     cache_app = CacheFixtureApp()
     sleep_app = PausingMiddleware(cache_app, sleep_time)
     transcluder = TranscluderMiddleware(sleep_app, tasklist = the_tasklist)
@@ -211,9 +211,9 @@ def test_parallel_gets():
     cache_app.map_url('/page2.html', pages['page2_1.html'])
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
+    end = time.time() 
     expected = static_test_app.get('/expected5.html')
     html_string_compare(result.body, expected.body)
-    end = time.time() 
     
     #print "took %s sleep_times" % ((end - start) / sleep_time) 
     assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint(2, end - start)

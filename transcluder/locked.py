@@ -11,7 +11,7 @@ def locked(func, *args, **kw):
     return result
 
 @decorator
-def locked(func, *args, **kw):
+def lockedx(func, *args, **kw):
     if hasattr(args[0], 'cv'):
         lock = args[0].cv
     else:
