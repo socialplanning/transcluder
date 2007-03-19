@@ -1,3 +1,7 @@
+# Note: test_parallel_gets has been renamed to teXst_parallel_gets so
+# that it does not get run by default, because it is slow.  Also, the __main__ stuff has been
+# removed
+
 import re
 import os
 import sys
@@ -147,7 +151,7 @@ class PausingMiddleware:
 
 
 the_tasklist = TaskList()
-def test_parallel_gets(): 
+def teXst_parallel_gets(): 
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', '304')
 
@@ -166,7 +170,6 @@ def test_parallel_gets():
         pages[page].etag = page
     
     #load up the deptracker
-    the_tasklist.init("**** parallel 1")
     start = time.time() 
     result = test_app.get('/index.html')
     end = time.time() 
@@ -177,7 +180,6 @@ def test_parallel_gets():
     assert etag is not None
 
     #test parallel fetch from correct tracked deps
-    the_tasklist.init("**** parallel 2")
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
     end = time.time() 
@@ -185,7 +187,6 @@ def test_parallel_gets():
     assert  sleep_time <= end - start < 2*sleep_time, the_tasklist.doprint(1, end - start)
     assert result.status == 304
 
-    the_tasklist.init("**** parallel 3")
     pages['page1.html'].etag = 'page1.new'
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})    
@@ -198,7 +199,6 @@ def test_parallel_gets():
     assert result.status == 200 
 
     # change the content of the index page, this will make it depend on page3 
-    the_tasklist.init("**** parallel 4")
     cache_app.map_url('/index.html',pages['index2.html'])
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
@@ -207,7 +207,6 @@ def test_parallel_gets():
     assert  2*sleep_time <= end - start < 3*sleep_time, the_tasklist.doprint(2, end - start)
 
     # change dependency to have a dependency 
-    the_tasklist.init("**** parallel 5")
     cache_app.map_url('/page2.html', pages['page2_1.html'])
     start = time.time() 
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_NONE_MATCH' : etag})
@@ -308,7 +307,7 @@ def test_internal():
 
 thread_count = 0
 from threading import Thread
-def try_test_parallel_gets():
+def try_teXst_parallel_gets():
     global thread_count
     try:
         test_parallel_gets()
@@ -316,7 +315,9 @@ def try_test_parallel_gets():
         thread_count -= 1
 
 if __name__ == '__main__':
-    print os.getpid()
+    pass
+
+if 0:
     global thread_count
     count = 0 
     ok = 0 
