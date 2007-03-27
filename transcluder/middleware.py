@@ -71,8 +71,8 @@ class TranscluderMiddleware:
             pm.merge_headers_into(headers)
             start_response('304 Not Modified', headers)
             return []
-        else: 
-            pm.begin_speculative_gets() 
+
+        pm.begin_speculative_gets() 
 
         status, headers, body, parsed = pm.fetch(request_url)
 
