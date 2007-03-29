@@ -11,6 +11,20 @@ import time
 import traceback 
 import threading
 
+class trackingSet(Set):
+    def __init__(self, *args):
+        print "starting with %s" % (args,)
+        Set.__init__(self, *args)
+    
+    def add(self, *args):
+        print "adding %s" % args
+        return Set.add(self, *args)
+
+    def remove(self, *args):
+        print "removing %s" % args
+        return Set.remove(self, *args)
+
+
 # def timeit(func, *args):
 #     start = time.time()
 #     out = func(*args)
@@ -51,7 +65,7 @@ import threading
 class TaskList:
     def __init__(self, poolsize=30):
         self._fetchlists = avl()
-        self._lock = Lock()
+        self._lock = RLock()
         self.cv = Condition(self._lock)
         self.next_task_list_index = 0
         self.alive = True
@@ -193,6 +207,7 @@ class FetchListItem(WorkRequest):
         self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url)) # XXX transcluder dependencey
 
         if self.request_type == RequestType.conditional_get:
+            assert 'HTTP_IF_NONE_MATCH' in self.environ or 'HTTP_IF_MODIFIED_SINCE' in self.environ
             if 'HTTP_IF_NONE_MATCH' in self.environ:
                 etags = self.environ['transcluder.etags'] # XXX transcluder dependency
                 if etags.has_key(self.url):
@@ -307,6 +322,7 @@ class PageManager:
         return True
 
     def fetch(self, url):
+        #print "fetch %s" % url
         self.cv.acquire()
         try:        
             if self.have_page_content(url):
@@ -341,6 +357,12 @@ class PageManager:
 
     @locked 
     def merge_headers_into(self, headers):        
+        if not (self._state == PMState.done or self._state == PMState.not_modified):
+            print "Bad state %s" % self._state
+            print self._actual_deps
+            print self._page_archive
+            print self._needed
+
         assert self._state == PMState.done or self._state == PMState.not_modified 
 
         response_info = {} 

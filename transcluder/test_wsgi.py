@@ -82,21 +82,19 @@ def test_if_mod_304():
     
     transcluder = TranscluderMiddleware(cache_app)
     test_app = TestApp(transcluder)
-
     #load up the deptracker
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
 
     #and test it
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
     assert result.status == 304
-    
+
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(500)})
     assert result.status == 200
 
     page1.mod_time = 3000
     result = test_app.get('/index.html', extra_environ={'HTTP_IF_MODIFIED_SINCE' : make_http_time(2000)})
     assert result.status == 200
-
 
 def test_etag_304():
     base_dir = os.path.dirname(__file__)
