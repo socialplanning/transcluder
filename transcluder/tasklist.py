@@ -1,4 +1,5 @@
 from sets import Set
+from copy import copy 
 from threading import Lock, RLock, Condition
 from enum import Enum
 from avl import new as avl
@@ -321,12 +322,16 @@ class PageManager:
 
         return True
 
+    def _get_cached_copy(self, url):
+        status, headers, body, parsed = self._page_archive[url]
+        return (status, headers, body, copy(parsed))
+
     def fetch(self, url):
         #print "fetch %s" % url
         self.cv.acquire()
         try:        
             if self.have_page_content(url):
-                return self._page_archive[url]
+                return self._get_cached_copy(url)
 
             if self._state == PMState.initial: 
                 self._init_speculative_gets()
@@ -342,14 +347,14 @@ class PageManager:
                           RequestType.get, 
                           self)
             fetch()
-            return self._page_archive[url]
+            return self._get_cached_copy(url)
 
         #otherwise, wait for it
         self.cv.acquire()
         try:
             while 1:
                 if self.have_page_content(url): 
-                    return self._page_archive[url]
+                    return self._get_cached_copy(url)
                 self.cv.wait()
         finally:
             self.cv.release()
