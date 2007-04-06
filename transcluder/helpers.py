@@ -63,7 +63,7 @@ def make_uri_template_dict(request_url):
     if len(parts[1]):
         loc = parts[1]
         if loc.find(':') != -1:
-            host, port = loc.spit(':')
+            host, port = loc.split(':')
             scope['request.host'] = host
             scope['request.port'] = port
         else:

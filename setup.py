@@ -32,6 +32,10 @@ setup(name="Transcluder",
       entry_points="""
       [paste.filter_app_factory]
       main = transcluder.middleware:make_filter
+
+      [paste.app_factory]
+      main = transcluder.proxyapp:make_proxy
+
       """,
       )
 
