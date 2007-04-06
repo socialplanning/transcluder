@@ -3,7 +3,7 @@ Transclusion WSGI middleware
 """
 
 from paste.request import construct_url
-from paste.response import header_value
+from paste.response import header_value, replace_header
 from paste.wsgilib import intercept_output
 from urlparse import urlparse
 from lxml import etree
@@ -80,6 +80,9 @@ class TranscluderMiddleware:
             tc.transclude(parsed, request_url)
             body = lxmlutils.tostring(parsed)
             pm.merge_headers_into(headers)
+
+	replace_header(headers, 'content-length', str(len(body)))
+	replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
         start_response(status, headers)
         return [body]
