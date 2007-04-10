@@ -80,12 +80,13 @@ class TranscluderMiddleware:
 
         pm.begin_speculative_gets() 
 
-        # XXX eh this could be a POST...
         status, headers, body, parsed = pm.fetch(request_url)
 
         if parsed: 
             tc.transclude(parsed, request_url)
+            # XXX doctype 
             body = lxmlutils.tostring(parsed)
+ 
 
         pm.merge_headers_into(headers)
 	replace_header(headers, 'content-length', str(len(body)))
