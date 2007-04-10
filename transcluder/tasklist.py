@@ -372,15 +372,17 @@ class PageManager:
 
         response_info = {} 
         cookies = {}
-        for url in self._actual_deps: 
+        for url in self._actual_deps:
+            #print "merging info for %s\n%s" % (url, self._page_archive[url][1]) 
             response_info[url] = self._page_archive[url][0:3]
             status, page_headers, body, parsed = self._page_archive[url]
             cookies.update(get_set_cookies_from_headers(page_headers, url))
         
         merge_cache_headers(response_info, headers)
 
-        newcookie = wrap_cookies(cookies.values())        
-        headers.append(('Set-Cookie', newcookie)) # replace? 
+        newcookie = wrap_cookies(cookies.values())
+        if newcookie is not None: 
+            headers.append(('Set-Cookie', newcookie)) # replace? 
 
 
     @locked

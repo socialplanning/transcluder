@@ -1,6 +1,8 @@
 """
 Transclusion WSGI middleware
 """
+import traceback
+import httplib
 
 from paste.request import construct_url
 from paste.response import header_value, replace_header
@@ -17,6 +19,7 @@ from wsgifilter.cache_utils import parse_merged_etag
 from transcluder.cookie_wrapper import * 
 from transcluder.tasklist import PageManager, TaskList
 from transcluder.deptracker import DependencyTracker
+
 
 def is_conditional_get(environ):
     return 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_NONE_MATCH' in environ
@@ -39,6 +42,8 @@ class TranscluderMiddleware:
     def __call__(self, environ, start_response):
         environ = environ.copy()
 
+
+        
         environ['transcluder.outcookies'] = {}
         if environ.has_key('HTTP_COOKIE'):
             environ['transcluder.incookies'] = expire_cookies(unwrap_cookies(environ['HTTP_COOKIE']))
@@ -63,7 +68,8 @@ class TranscluderMiddleware:
             if status.startswith('200'):
                 return parsed
             else:
-                raise Exception, status
+                raise Exception, 'Status was: %s, %s' % (status, body) 
+            
         tc.fetch = simple_fetch
 
         if is_conditional_get(environ) and not pm.is_modified():
@@ -74,16 +80,19 @@ class TranscluderMiddleware:
 
         pm.begin_speculative_gets() 
 
+        # XXX eh this could be a POST...
         status, headers, body, parsed = pm.fetch(request_url)
 
         if parsed: 
             tc.transclude(parsed, request_url)
             body = lxmlutils.tostring(parsed)
-            pm.merge_headers_into(headers)
 
+        pm.merge_headers_into(headers)
 	replace_header(headers, 'content-length', str(len(body)))
 	replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
+        #print "outbound headers: %s" % headers
+        
         start_response(status, headers)
         return [body]
 
@@ -104,28 +113,46 @@ class TranscluderMiddleware:
         return url
 
     def etree_subrequest(self, url, environ):
+        try: 
+            effective_url = self.premangle_subrequest(url, environ)
 
-        effective_url = self.premangle_subrequest(url, environ)
+            url_parts = urlparse(effective_url)
+            env = environ.copy()
 
-        url_parts = urlparse(effective_url)
-        env = environ.copy()
+            env['PATH_INFO'] = url_parts[2]
+            if len(url_parts[4]):
+                env['QUERY_STRING'] = url_parts[4]
 
-        env['PATH_INFO'] = url_parts[2]
-        if len(url_parts[4]):
-            env['QUERY_STRING'] = url_parts[4]
+            request_url = construct_url(environ, with_path_info=False,
+                                        with_query_string=False)
+            request_url_parts = urlparse(request_url)
 
-        request_url = construct_url(environ, with_path_info=False, with_query_string=False)
-        request_url_parts = urlparse(request_url)
+            if url == construct_url(environ):
+                status, headers, body = intercept_output(environ, self.app)
+            elif url_parts[0] == 'file':
+                status, headers, body = get_file_resource(file, env)
+            elif request_url_parts[0:2] == url_parts[0:2]:
+                status, headers, body = get_internal_resource(url, env, self.app)
+            else:
+                status, headers, body = get_external_resource(url, env)
 
-        if request_url_parts[0:2] == url_parts[0:2]:
-            status, headers, body = get_internal_resource(url, env, self.app)
-        else:
-            status, headers, body = get_external_resource(url, env)
+            if status.startswith('200') and self.is_html(status, headers):
+                parsed = etree.HTML(body)
+            else:
+                parsed = None
 
-        if status.startswith('200') and self.is_html(status, headers):
-            parsed = etree.HTML(body)
-        else:
-            parsed = None
-        return status, headers, body, parsed
-
-
+            return status, headers, body, parsed
+        except Exception, message:
+            # httplib throws all sorts of fun exceptions to here
+            # some from socket and elsewhere when minor normal
+            # problems occur. Many of these should be consumed 
+            # to allow subpage fetching failures to occur gracefully.
+            # the option to freak out is preserved by returning a
+            # 500 status code.
+            
+            # XXX should be logged
+            traceback.print_exc()
+            err = str(message) # traceback.format_exc()
+            headers = [('content-length',len(err)),
+                       ('content-type','text/plain')]
+            return ('500 Server Error', headers, err, None)

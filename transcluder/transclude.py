@@ -62,7 +62,8 @@ class Transcluder:
 
             except Exception, message: 
                 self.attach_warning(target, "failed to retrieve %s (%s)" % 
-                               (source_url, traceback.format_exc()))
+                               (source_url, message))
+                # XXX should log traceback.format_exc() ?  
 
     def find_dependencies(self, document, document_url): 
         """
@@ -132,6 +133,6 @@ class Transcluder:
         """
         add the warning 'message' to the link 'target' 
         """
-        target.set('title', message)
+        target.set("title", message)
 
 

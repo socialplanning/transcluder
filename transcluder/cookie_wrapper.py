@@ -1,10 +1,12 @@
-from cookielib import split_header_words as broken_split_header_words, domain_match, IPV4_RE, http2time
+from cookielib import parse_ns_headers 
+from cookielib import domain_match, IPV4_RE, http2time
+from Cookie import SimpleCookie
 import base64
 import time
 import re
 from urlparse import urlparse 
 from paste import httpheaders
-
+import traceback
 
 """
 utilities for merging cookies from various sources 
@@ -13,7 +15,8 @@ this does not handle merging cookies whose size totals
 more than the single cookie limit of 4k
 """
 
-__all__ = ['split_header_words', 
+__all__ = ['parse_setcookie_headers',
+           'parse_cookie_header',
            'get_set_cookies_from_headers', 
            'wrap_cookies', 
            'unwrap_cookies', 
@@ -21,86 +24,109 @@ __all__ = ['split_header_words',
            'get_relevant_cookies', 
            'make_cookie_string' ]
 
-
-
-def split_header_words(cookies):
+def parse_setcookie_headers(setcookie_headers): 
+    if len(setcookie_headers):
+        cookies = parse_ns_headers(setcookie_headers)
+        return [make_cookie_dict(x) for x in cookies]
+    return []
+    
+    
+def parse_cookie_header(cookie_header_val):
     """
-    parses the value of the HTTP set-cookie header into a 
-    list of lists. each list represents a cookie and contains 
-    2-tuples consisiting of a cookie attribute name and its
-    value. 
-
-    One day, I got a cookie like this from livejournal.  No, really!  Note the comma after thursday:
-    Set-Cookie: langpref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.livejournal.com
-    At that point, I decided to become a farmer.  Farmers don't parse.
+    similar to parse_setcookie_header, but
+    using the syntax of the cookie header.
+    returns a list of cookies each represented
+    as a list containing name value pairs.
+    the first element is the name/value of
+    the cookie. 
     """
+    if not cookie_header_val:
+        return []
+    parser = SimpleCookie()
+    parser.load(cookie_header_val)
+    outcookies = []
+    for unused,cookie in parser.items():
+        cookie_tups = []
+        cookie_tups.append((cookie.key, cookie.coded_value))
+        # may also contain a path and domain attribute
+        for key, val in cookie.items():
+            if key.lower() in ['domain', 'path'] and val:
+                cookie_tups.append((key,val))
+        outcookies.append(cookie_tups)
+    return [make_cookie_dict(x) for x in outcookies] 
 
-    pat = re.compile("expires=((?:\w+)day,.*?)([;,]|$)")
-    return broken_split_header_words(map(lambda c : pat.sub(r'expires="\1"\2', c), cookies))
 
+def make_cookie_dict(c):
+    cookie_dict = {}
+    for k, v in c[1:]:
+        cookie_dict[k.lower()] = v
+    cookie_dict['name'], cookie_dict['value'] = c[0]
+
+    #if cookie_dict.has_key('expires'):
+    #    import pdb; pdb.set_trace()
+    #    cookie_dict['expires'] = http2time(cookie_dict['expires'])
+
+    if cookie_dict.has_key('max-age'):            
+        cookie_dict['expires'] = str(int(time.time()) + int(cookie_dict['max-age']))
+        del cookie_dict['max-age']
+
+    return cookie_dict
 
 def get_set_cookies_from_headers(headers, url):
-    """Gets the Set-Cookie headers (rather than getting and/or setting Cookie headers).
+    """Parses Set-Cookie headers which are legitimate for the
+    URL given. (rather than getting and/or setting Cookie headers).
 
     returns a map from 
-    (domain, name) -> cookie_map 
-    where domain is the origin domain specified by the cookie and 
+    (domain, path, name) -> cookie_map 
+    where domain is the origin domain specified by the cookie, path
+    is the path restriction set by the cookie, and 
     name is the application set name associated with the value of 
-    the cookie. Other cookie information such as path, version etc 
+    the cookie. Other cookie information such as version etc 
     are contained in the associated map. To obtain a list of 
     cookie_maps, just take values() of the result. 
 
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
     >>> url = 'http://www.example.com/morx/fleem'
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name') : {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name') : {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}}
     True
 
     Check domain restrictions:
     >>> headers.append(('Set-Cookie', 'name=value;domain=.badsite.com;path=/morx'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}}
     True
 
     Check domain restrictions:
     >>> headers.append(('Set-Cookie', 'name=value;domain=foo.bar.example.com'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}}
     True
 
     Check path restrictions:
     >>> headers.append(('Set-Cookie', 'name=value;domain=.example.com;path=/fleem'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}}
     True
 
     Check default domain
     >>> headers.append(('Set-Cookie', 'name=value;path=/morx'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value'}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}, ('www.example.com', '/morx', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'version': '0'}}
     True
 
     >>> headers.append(('Set-Cookie', 'name=value;path=/morx; Max-Age=1134771719'))
-    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value'}, ('www.example.com', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
+    >>> get_set_cookies_from_headers(headers, url) == {('.example.com', '/morx', 'name'): {'path': '/morx', 'domain': '.example.com', 'name': 'name', 'value': 'value', 'version': '0'}, ('www.example.com', '/morx', 'name'): {'path': '/morx', 'domain': 'www.example.com', 'name': 'name', 'version': '0', 'value': 'value', 'expires': str(int(time.time() + 1134771719))}}
     True
 
 
     >>> headers = [('Set-Cookie', 'BMLschemepref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.example.com')]
-    >>> get_set_cookies_from_headers(headers, url) ==  {('.example.com', 'BMLschemepref'): {'path': '/', 'domain': '.example.com', 'expires': 0, 'name': 'BMLschemepref', 'value': ''}}
+    >>> get_set_cookies_from_headers(headers, url) ==  {('.example.com', '/', 'BMLschemepref'): {'path': '/', 'domain': '.example.com', 'expires': 0, 'name': 'BMLschemepref', 'version': '0', 'value': ''}}
     True
     
-    
-
     """
     cookie_headers = [x[1] for x in headers if x[0].lower() == 'set-cookie']
-    cookies = split_header_words(cookie_headers)
+    cookies = parse_setcookie_headers(cookie_headers)
+
+    #print "GSCFH(%s) in: %s" % (url, cookies)
     
     cookies_by_key = {}
-    for c in cookies: 
-        cookie_dict = {}
-        for k, v in c[1:]:
-            cookie_dict[k.lower()] = v
-        cookie_dict['name'], cookie_dict['value'] = c[0]
-        if cookie_dict.has_key('expires'):
-            cookie_dict['expires'] = http2time(cookie_dict['expires'])
-        if cookie_dict.has_key('max-age'):            
-            cookie_dict['expires'] = str(int(time.time()) + int(cookie_dict['max-age']))
-            del cookie_dict['max-age']
+    for cookie_dict in cookies: 
 
         #rfc2109 section 4.3.2 "moon logic"
         urlparts = urlparse(url)
@@ -111,6 +137,7 @@ def get_set_cookies_from_headers(headers, url):
                     '.' in request_host[:len(request_host) - len(cookie_dict['domain'])]):
                     continue
         else:
+            # default the domain to the exact request_host
             cookie_dict['domain'] = request_host
 
         if cookie_dict.has_key('path'):
@@ -118,12 +145,16 @@ def get_set_cookies_from_headers(headers, url):
                 continue
         #end moon logic
 
-        key = (cookie_dict['domain'], cookie_dict['name'])
+        path = cookie_dict.get('path', '')
+        key = (cookie_dict['domain'], path, cookie_dict['name'])
         cookies_by_key [key] = cookie_dict
 
     return cookies_by_key
 
-cookie_attributes = ['name', 'value', 'domain', 'path', 'expires', 'secure', 'version']
+WRAPPED_COOKIE_NAME = '__wf_wrapped__'
+cookie_attributes = ['name', 'value', 'domain', 'path',
+                     'expires']
+# not currently using: , 'secure', 'version']
 def wrap_cookies(cookies, extra_attrs=None):
     """Converts a set of cookies into a single cookie
 
@@ -131,25 +162,48 @@ def wrap_cookies(cookies, extra_attrs=None):
     the cookie as well as other cookie attributes and attribute values  
 
     returns a value suitable for use as the value of the http Cookie 
-    header. 
+    header. by default the cookie never expires, has a path of / and
+    no domain. These may be overridden by specifying values in the
+    extra_attrs dictionary. 
 
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
     >>> url = 'http://www.example.com/morx/fleem'
     >>> x = get_set_cookies_from_headers(headers, url).values()
-    >>> unwrap_cookies(wrap_cookies(x)) == x
+    >>> x == unwrap_cookies(wrap_cookies(x))
     True
 
-    
+    >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo, foo=bar; domain=.example.com')]
+    >>> url = 'http://www.example.com/zoo/bar'
+    >>> x = get_set_cookies_from_headers(headers, url).values()
+    >>> x == unwrap_cookies(wrap_cookies(x))
+    True
+
+    >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo'), ('Set-Cookie', 'foo=bar; domain=.example.com')]
+    >>> url = 'http://www.example.com/zoo/bar'
+    >>> x = get_set_cookies_from_headers(headers, url).values()
+    >>> y = unwrap_cookies(wrap_cookies(x))
+    >>> x == y 
+    True
+
     """
+    # print "wrapping %s" % cookies
+    
+    if len(cookies) == 0:
+        return None
+    
     output_list = []
     for cookie in cookies:
         cookie_list = []
         for attr in cookie_attributes:
             cookie_list.append(cookie.get(attr, ''))
         output_list.append("\1".join(cookie_list))
-    value = base64.encodestring("\0".join(output_list)).replace('=','-')[:-1]
 
-    wrapped_cookie = "m=%s" % value 
+
+    merged = '\2'.join(output_list)
+    b64enc = base64.b64encode(merged)
+    cookie_val = b64enc.replace('=','@')
+
+    wrapped_cookie = "%s=%s" % (WRAPPED_COOKIE_NAME, cookie_val) 
     if not extra_attrs: 
         extra_attrs = {}
 
@@ -161,36 +215,74 @@ def wrap_cookies(cookies, extra_attrs=None):
         httpheaders.LAST_MODIFIED.update(tmp, time=extra_attrs['expires'])
         extra_attrs['expires']= tmp[0][1]
 
+    if not extra_attrs.has_key('path'):
+        extra_attrs['path'] = '/'
+        
     for key, val in extra_attrs.items(): 
         wrapped_cookie += ";%s = %s" % (key,val)
 
     return wrapped_cookie 
 
-def unwrap_cookies(wrapped_cookie): 
+def unwrap_cookies(cookie_header): 
     """
-    Unwraps a wrapped cookie created by wrap_cookies into a 
-    list of cookie-maps 
+    Unwraps any wrapped cookies in the cookie header value
+    given, returns list of cookie-maps. 
+
+    >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo, foo=bar; domain=.example.com')]
+    >>> url = 'http://www.example.com/zoo/bar'
+    >>> cookies = get_set_cookies_from_headers(headers, url).values()
+    >>> x = wrap_cookies(cookies)
+    >>> unwrapped = unwrap_cookies('quux=zoo; %s; blurn=blarg' % x)
+    >>> cookies == unwrapped
+    True
+
+    >>> unwrap_cookies('foo=bar; domain=.example.com')
+    []
+    >>> unwrap_cookies('%s=somegarbage' % WRAPPED_COOKIE_NAME)
+    []
+    >>> unwrap_cookies('foo=bar; domain=.example.com, name=value; domain=.baz.org')
+    []
     """
-    cookie_parts = split_header_words([wrapped_cookie])
-    if not cookie_parts:
+    cookies = parse_cookie_header(cookie_header)
+    if not cookies:
         return []
-    cookie = cookie_parts[0][0][1]
-    if not cookie:
-        return []
-    cookie = cookie.replace('-', '=')
-    cookie += '\n'
-    cookies = base64.decodestring(cookie).split("\0")
 
     unwrapped = []
+    for cookie in cookies:
+        if cookie['name'] == WRAPPED_COOKIE_NAME: 
+            try:
+                unwrapped += unwrap_cookie_val(cookie['value'])
+            except Exception:
+                # XXX log
+                pass
+    return unwrapped 
+
+def unwrap_cookie_val(cookie): 
+    """
+    splits a wrapped cookie value created with wrap_cookies
+    into component cookie-maps 
+    """
+
+
+
+    if not cookie:
+        return []
+
+    cookie = cookie.replace('@', '=')
+
+    unwrapped = []
+
+    cookies = base64.b64decode(cookie).split("\2")
     for encoded_cookie in cookies:
         split_cookie = encoded_cookie.split("\1")
         cookie_dict = {}
         for i in range(len(cookie_attributes)):
             if split_cookie[i]: 
                 cookie_dict[cookie_attributes[i]] = split_cookie[i]
-        if cookie_dict.has_key('expires'): 
-            cookie_dict['expires'] = http2time(cookie_dict['expires'])
+            #if cookie_dict.has_key('expires'): 
+            #    cookie_dict['expires'] = http2time(cookie_dict['expires'])
         unwrapped.append(cookie_dict)
+     
     return unwrapped
 
 def expire_cookies(cookies):
