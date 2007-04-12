@@ -153,8 +153,7 @@ def get_set_cookies_from_headers(headers, url):
 
 WRAPPED_COOKIE_NAME = '__wf_wrapped__'
 cookie_attributes = ['name', 'value', 'domain', 'path',
-                     'expires']
-# not currently using: , 'secure', 'version']
+                     'expires', 'secure', 'version']
 def wrap_cookies(cookies, extra_attrs=None):
     """Converts a set of cookies into a single cookie
 
