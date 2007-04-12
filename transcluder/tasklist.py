@@ -347,7 +347,11 @@ class PageManager:
                           RequestType.get, 
                           self)
             fetch()
-            return self._get_cached_copy(url)
+            self.cv.acquire()
+            try:
+                return self._get_cached_copy(url)
+            finally: 
+                self.cv.release()
 
         #otherwise, wait for it
         self.cv.acquire()
