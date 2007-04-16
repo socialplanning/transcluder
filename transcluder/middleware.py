@@ -21,6 +21,8 @@ from transcluder.tasklist import PageManager, TaskList
 from transcluder.deptracker import DependencyTracker
 
 
+TRANSCLUDED_HTTP_HEADER = 'HTTP_X_TRANSCLUDED'
+
 def is_conditional_get(environ):
     return 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_NONE_MATCH' in environ
 
@@ -123,6 +125,8 @@ class TranscluderMiddleware:
             env['PATH_INFO'] = url_parts[2]
             if len(url_parts[4]):
                 env['QUERY_STRING'] = url_parts[4]
+
+            env[TRANSCLUDED_HTTP_HEADER] = 'True'
 
             request_url = construct_url(environ, with_path_info=False,
                                         with_query_string=False)
