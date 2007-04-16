@@ -44,7 +44,7 @@ class TranscluderMiddleware:
     def __call__(self, environ, start_response):
         environ = environ.copy()
 
-
+        environ[TRANSCLUDED_HTTP_HEADER] = 'True'
         
         environ['transcluder.outcookies'] = {}
         if environ.has_key('HTTP_COOKIE'):
@@ -126,7 +126,6 @@ class TranscluderMiddleware:
             if len(url_parts[4]):
                 env['QUERY_STRING'] = url_parts[4]
 
-            env[TRANSCLUDED_HTTP_HEADER] = 'True'
 
             request_url = construct_url(environ, with_path_info=False,
                                         with_query_string=False)
