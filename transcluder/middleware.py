@@ -68,7 +68,7 @@ class TranscluderMiddleware:
             if status.startswith('200'):
                 return parsed
             else:
-                raise Exception, 'Status was: %s, %s' % (status, body) 
+                raise Exception, 'Status was: %s' % status 
             
         tc.fetch = simple_fetch
 
