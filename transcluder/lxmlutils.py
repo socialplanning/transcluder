@@ -38,6 +38,9 @@ def fixup_links(doc, uri):
     elts = doc.xpath('//*[@src]')
     fixup_link_attrs(elts, base_uri, 'src')
 
+    elts = doc.xpath('//*[@action]')
+    fixup_link_attrs(elts, base_uri, 'action')
+
     #elts = doc.xpath('//head/style')
     #fixup_css_links(elts, base_uri)
 
