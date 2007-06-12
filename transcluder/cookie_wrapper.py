@@ -145,6 +145,10 @@ def get_set_cookies_from_headers(headers, url):
                 continue
         #end moon logic
 
+        domain = cookie_dict.get('domain', '')
+        if ':' in domain:
+            cookie_dict['domain'] = domain[:domain.index(":")]
+
         path = cookie_dict.get('path', '')
         key = (cookie_dict['domain'], path, cookie_dict['name'])
         cookies_by_key [key] = cookie_dict
@@ -308,7 +312,11 @@ def get_relevant_cookies(jar, url):
     domain = urlparts[1]
     path = urlparts[2]
 
-    return [x for x in jar if domain_match(domain, x['domain']) and path.startswith(x.get('path',''))]
+    if ':' in domain:
+        domain = domain[:domain.index(':')]
+
+    return [x for x in jar if domain_match(domain, x['domain'])
+            and path.startswith(x.get('path',''))]
 
 
 def make_cookie_string(cookies):
