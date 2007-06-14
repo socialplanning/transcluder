@@ -29,6 +29,9 @@ setup(name="Transcluder",
 	'nose',
         'ElementTree'
       ],
+      dependency_links=[
+      	'http://superb-west.dl.sourceforge.net/sourceforge/pyavl/pyavl-1.1.tar.gz#egg=pyavl'
+      ],
       include_package_data=True,
       entry_points="""
       [paste.filter_app_factory]

@@ -1,24 +1,26 @@
 """
 helper functions for configuration 
 """
-
-from lxml import etree
-import urlparse
 from copy import copy 
+from lxml import etree
+import re
+import urlparse
 
 
 
-###########################################
-# some predicates for recursion decisions 
-###########################################
 
-def always_recurse(url): 
+
+####################################################
+# some predicates for recursion/inclusion decisions 
+####################################################
+
+def all_urls(url): 
     return True 
 
-def never_recurse(url): 
+def no_urls(url): 
     return False
 
-def recurse_for_localhost_only(url): 
+def localhost_only(url): 
     """
     a recursion predicate that only allows recursive
     transclusion from localhost only 
@@ -26,11 +28,18 @@ def recurse_for_localhost_only(url):
     host = urlparse.urlparse(url)[1].split(':')[0]
     return host == 'localhost'
 
-def make_recursion_predicate(whitelisted_prefixes): 
+def make_regex_predicate(regex_pat):
+    pat = re.compile(regex_pat)
+    def predicate(url):
+        host = urlparse.urlparse(url)[1].split(':')[0]
+        return re.search(pat, host, re.I) is not None
+    return predicate
+
+def make_whitelist_predicate(whitelisted_prefixes): 
     """
     prepare a predicate for determining where 
-    recursive transclusion is allowed from a 
-    list of allowable prefixes. 
+    whis is true for urls starting with any prefix
+    given in whitelisted_prefixes
     eg: ['http://www.example.org/', 'https://www.example.org/']
     """
     prefixes = copy(whitelisted_prefixes)

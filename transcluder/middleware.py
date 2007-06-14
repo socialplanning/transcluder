@@ -28,9 +28,11 @@ def is_conditional_get(environ):
 
 class TranscluderMiddleware:
     def __init__(self, app, deptracker = None, tasklist = None,
-                 recursion_predicate=helpers.always_recurse): 
+                 include_predicate=helpers.all_urls,
+                 recursion_predicate=helpers.all_urls): 
 
         self.app = app
+        self.include_predicate = include_predicate
         self.recursion_predicate = recursion_predicate
         if deptracker:
             self.deptracker = deptracker
@@ -62,7 +64,9 @@ class TranscluderMiddleware:
 
         variables = self.get_template_vars(request_url)
         
-        tc = Transcluder(variables, None, should_recurse=self.recursion_predicate)
+        tc = Transcluder(variables, None,
+                         should_include=self.include_predicate,
+                         should_recurse=self.recursion_predicate)
 
         pm = PageManager(request_url, environ, self.deptracker, tc.find_dependencies, self.tasklist, self.etree_subrequest)
         def simple_fetch(url):

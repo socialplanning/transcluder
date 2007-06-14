@@ -10,10 +10,12 @@ from transcluder.locked import locked
 
 class Transcluder: 
 
-    def __init__(self, variables, fetch, 
-                 should_recurse=helpers.always_recurse): 
+    def __init__(self, variables, fetch,
+                 should_include=helpers.all_urls,
+                 should_recurse=helpers.all_urls): 
         self.variables = variables 
-        self.fetch = fetch 
+        self.fetch = fetch
+        self.should_include = should_include
         self.should_recurse = should_recurse
         self._lock = Lock()
 
@@ -48,6 +50,10 @@ class Transcluder:
                 continue
 
             try: 
+                if not self.should_include(source_url):
+                    self.attach_warning(target, "Including from this URL is forbidden")
+                    continue
+
                 subdoc = self.fetch(source_url)
 
                 if subdoc is None: 
@@ -61,12 +67,16 @@ class Transcluder:
                 self.merge(target, subdoc, source_url)
 
             except Exception, message: 
-                self.attach_warning(target, "failed to retrieve %s (%s)" % 
-                               (source_url, message))
+                self.attach_warning(target, "Failed to retrieve (%s), url: %s" % 
+                               (message, source_url))
                 # XXX should log traceback.format_exc() ?  
 
     def find_dependencies(self, document, document_url): 
         """
+        retrieves the direct dependencies of the document
+        given, ie all urls which referred to in transcluder
+        links and are allowable according to the should_include
+        policy. This does not include recursive dependencies. 
         """
 
         deps = Set() 
@@ -75,7 +85,7 @@ class Transcluder:
         for target in target_links: 
             source_url = self.get_include_url(target, document_url)
 
-            if source_url is not None: 
+            if source_url is not None and self.should_include(source_url):
                 deps.add(source_url)
 
         return list(deps)
