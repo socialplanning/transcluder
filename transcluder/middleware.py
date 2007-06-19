@@ -92,11 +92,10 @@ class TranscluderMiddleware:
             tc.transclude(parsed, request_url)
             # XXX doctype 
             body = lxmlutils.tostring(parsed)
- 
+            replace_header(headers, 'content-length', str(len(body)))
+            replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
         pm.merge_headers_into(headers)
-	replace_header(headers, 'content-length', str(len(body)))
-	replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
         #print "outbound headers: %s" % headers
         
