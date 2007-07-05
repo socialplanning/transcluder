@@ -236,7 +236,7 @@ class CookieMiddlware:
 
         status, headers, body = intercept_output(environ, self.app)
         headers.append(('Set-Cookie', 'name=%s' % domain))
-        
+
         start_response('200 OK', headers)
         return ["<html><head></head><body>Had %s. Setting cookie from %s</body></html>" % (old_cookie, domain)]
 
@@ -255,6 +255,48 @@ def test_cookie():
     result = test_app.get('/index.html')
     expected = test_static_app.get('/expected2.html')
     html_string_compare(result.body, expected.body)
+
+
+class SequentialCookieMiddleware:
+    def __init__(self):
+        self.seqnum = 0
+        
+    def __call__(self, environ, start_response):
+        headers = [('Content-Type', 'text/html')]
+        
+        if self.seqnum == 0:
+            headers.append(('Set-Cookie', 'unchanged=0'))
+
+        for i in range(0, self.seqnum):
+            headers.append(('Set-Cookie', 'cookie%s=%s' % (i, self.seqnum)))
+
+        self.seqnum += 1
+
+        cookies_fmt = ','.join(sorted(environ['HTTP_COOKIE'].split(',')))
+        
+        body = '<html><head></head><body>%s</body></html>' % cookies_fmt
+            
+        start_response('200 OK', headers)
+        return [ body ]
+    
+def test_sequential():
+    base_dir = os.path.dirname(__file__)
+    test_dir = os.path.join(base_dir, 'test-data', 'sequential')
+    static_app = StaticURLParser(test_dir)
+    test_static_app = TestApp(static_app)
+    
+    app = SequentialCookieMiddleware()
+    app = TranscluderMiddleware(app)
+    test_app = TestApp(app)
+    
+    for i in range(0, 10):
+        result = test_app.get('/')
+
+    expected = test_static_app.get('/expected.html')
+
+    html_string_compare(result.body, expected.body)
+
+
 
 class TimeBomb: 
     def __init__(self, app, calls_until_explosion=1): 

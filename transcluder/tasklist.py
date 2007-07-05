@@ -376,8 +376,14 @@ class PageManager:
 
         response_info = {} 
         cookies = {}
+        in_cookies = self._environ['transcluder.incookies']
+        for cookie_map in in_cookies:
+            id = (cookie_map['domain'],
+                  cookie_map.get('path',''),
+                  cookie_map['name'])
+            cookies[id] = cookie_map
+        
         for url in self._actual_deps:
-            #print "merging info for %s\n%s" % (url, self._page_archive[url][1]) 
             response_info[url] = self._page_archive[url][0:3]
             status, page_headers, body, parsed = self._page_archive[url]
             cookies.update(get_set_cookies_from_headers(page_headers, url))

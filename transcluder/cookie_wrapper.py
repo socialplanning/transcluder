@@ -123,7 +123,7 @@ def get_set_cookies_from_headers(headers, url):
     cookie_headers = [x[1] for x in headers if x[0].lower() == 'set-cookie']
     cookies = parse_setcookie_headers(cookie_headers)
 
-    #print "GSCFH(%s) in: %s" % (url, cookies)
+    # print "GSCFH(%s) in: %s / (%s)" % (url, cookies, cookie_headers)
     
     cookies_by_key = {}
     for cookie_dict in cookies: 
@@ -296,7 +296,7 @@ def expire_cookies(cookies):
     out = []
     now = time.time()
     for cookie in cookies:
-        if not cookie.has_key('expires') or cookie['expires'] < now:
+        if not cookie.has_key('expires') or cookie['expires'] > now:
             out.append(cookie)
     return out
 
@@ -315,9 +315,12 @@ def get_relevant_cookies(jar, url):
     if ':' in domain:
         domain = domain[:domain.index(':')]
 
-    return [x for x in jar if domain_match(domain, x['domain'])
+    cks = [x for x in jar if domain_match(domain, x['domain'])
             and path.startswith(x.get('path',''))]
 
+    # print "get_relevant_cookies(%s,%s) => %s" % (jar, url, cks)
+
+    return cks
 
 def make_cookie_string(cookies):
     """
