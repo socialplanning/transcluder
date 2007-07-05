@@ -91,7 +91,8 @@ class TranscluderMiddleware:
         if parsed: 
             tc.transclude(parsed, request_url)
             # XXX doctype 
-            body = lxmlutils.tostring(parsed)
+            body = lxmlutils.tostring(parsed, doctype_pair=("-//W3C//DTD HTML 4.01 Transitional//EN",
+                                                            "http://www.w3.org/TR/html4/loose.dtd"))
             replace_header(headers, 'content-length', str(len(body)))
             replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
