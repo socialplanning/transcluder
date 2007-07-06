@@ -7,69 +7,136 @@ from transcluder import uritemplates
 import traceback 
 from threading import Lock
 from transcluder.locked import locked
+import copy
 
 class Transcluder: 
+    """
+    This class performs the transclusion
+    operation on a document. Each anchor
+    tag in a transcluded document of
+    the form:
+    
+    <a rel="include" href="someurl">...</a>
+
+    is replaced by the content referred to
+    by 'someurl'.
+
+    further, the url may be a uri template
+    as described in uritemplates.
+    """
+
 
     def __init__(self, variables, fetch,
                  should_include=helpers.all_urls,
-                 should_recurse=helpers.all_urls): 
+                 should_recurse=helpers.all_urls,
+                 max_depth=3):
+        """
+        variables - a dictionary which specifies the
+          values to use when filling in uri template
+          variables
+
+        fetch - a function acception a url and
+          returning a parsed lxml document representing
+          the content located at the url.
+
+        should_include - a predicate accepting a url
+          which returns true iff it is acceptable to
+          include content from the url given
+
+        should_recurse - a predicate accepting a url
+          which returns true iff it is acceptable to
+          perform recursive transclusion on a document
+          located at the url specified
+
+        max_depth - the maximum depth of recursive
+          transclusions performed when transcluding a
+          document. Set to 1 to only include documents
+          referenced by the document given. 
+        """
         self.variables = variables 
         self.fetch = fetch
         self.should_include = should_include
         self.should_recurse = should_recurse
+        self.max_depth = max_depth
         self._lock = Lock()
 
     @locked
     def xpath(self, document, path):
         return document.xpath(path)
 
-    def transclude(self, document, document_url): 
+    def transclude(self, document, document_url, _cache=None, _depth=1): 
         """
         perform transclusion on the document given 
 
-        document: lxml etree structure representing the document to perform
+        document - lxml etree structure representing the document to perform
           transclusion on
 
-        document_url: the url of the document
-
-        self.fetch: a callable which given a url can return an
-          lxml etree structure for the document referred to by the url 
-          (no fragment interpretation should be performed) 
-
-        self.should_recurse: a predicate accepting a url and returning 
-          whether the transcluder should recurse and perform transclusion on 
-          the url given. 
+        document_url - the url of the document
         """
 
-        target_links = self.xpath(document, "//a[@rel='include']")
-        for target in target_links: 
+        if _cache is None:
+            _cache = {}
+
+        target_links = self.get_transcluder_links(document)
+        for target in target_links:
             source_url = self.get_include_url(target, document_url) 
 
             if source_url is None: 
                 self.attach_warning(target, "no href specified")
                 continue
 
-            try: 
+            try:
                 if not self.should_include(source_url):
-                    self.attach_warning(target, "Including from this URL is forbidden")
+                    self.attach_warning(target,
+                                        "Including from this URL is forbidden")
                     continue
 
-                subdoc = self.fetch(source_url)
-
-                if subdoc is None: 
+                subdoc = self._get(source_url, _depth, _cache)
+                if subdoc is None:
                     self.attach_warning(target, "No HTML content in %s" % source_url)
                     continue
+                else:
+                    self.merge(target, subdoc, source_url)
 
-                if self.should_recurse(source_url): 
-                    self.transclude(subdoc, source_url)
-
-                lxmlutils.fixup_links(subdoc, source_url)
-                self.merge(target, subdoc, source_url)
-
-            except Exception, message: 
-                self.attach_warning(target, "Failed to retrieve (%s), url: %s" % 
-                               (message, source_url))
+            except Exception, message:
+                self.attach_warning(target, "Failed to retrieve (%s), url: %s"
+                                    % (message, source_url))
                 # XXX should log traceback.format_exc() ?  
+
+
+    def _get(self, source_url, depth, cache):
+        """
+        helper function for retrieving subdocuments
+        """
+        base_url = self.base_url(source_url)
+        if base_url in cache:
+            return cache[base_url]
+        else:
+            subdoc = self.fetch(base_url)
+            if subdoc is None:
+                return None
+
+            should_cache = True
+            if depth >= self.max_depth:
+                self.attach_warning_all(subdoc, "Maximum recursion depth reached")
+                should_cache = False
+            elif not self.should_recurse(source_url):
+                self.attach_warning_all(subdoc,
+                                        "Including from parent"
+                                        "document is forbidden (%s)" %
+                                        source_url)
+            else:
+                self.transclude(subdoc, source_url,
+                                _cache=cache,
+                                _depth=depth+1)
+
+            lxmlutils.fixup_links(subdoc, source_url)
+                
+            if should_cache:
+                cache[base_url] = subdoc
+
+            return subdoc
+
 
     def find_dependencies(self, document, document_url): 
         """
@@ -81,16 +148,15 @@ class Transcluder:
 
         deps = Set() 
 
-        target_links = self.xpath(document, "//a[@rel='include']")
-        for target in target_links: 
-            source_url = self.get_include_url(target, document_url)
-
-            if source_url is not None and self.should_include(source_url):
-                deps.add(source_url)
+        if self.should_recurse(document_url):
+            target_links = self.get_transcluder_links(document)
+            for target in target_links: 
+                source_url = self.get_include_url(target, document_url)
+                if (source_url is not None and
+                    self.should_include(source_url)):
+                    deps.add(self.base_url(source_url))
 
         return list(deps)
-
-
 
 
     def merge(self, target, subdoc, source_url): 
@@ -115,10 +181,19 @@ class Transcluder:
                                     'no element with id %s found in %s' % 
                                     (fragment, source_url))
                 return
-            lxmlutils.replace_element(target, els[0])
-        else: 
-            lxmlutils.replace_many(target, self.xpath(subdoc, '//body/child::node()'))
 
+            el = copy.deepcopy(els[0]) 
+            lxmlutils.replace_element(target, el)
+        else:
+            els = copy.deepcopy(self.xpath(subdoc, '//body/child::node()'))
+            lxmlutils.replace_many(target, els)
+
+    def get_transcluder_links(self, document):
+        """
+        find all link tags in a document which are
+        relevant to transcluder (ie with rel=include)
+        """
+        return self.xpath(document, "//a[@rel='include']")
 
     def get_include_url(self, target, document_url): 
         """
@@ -138,6 +213,12 @@ class Transcluder:
         source_url = uritemplates.expand_uri_template(source_url, self.variables)
         return urlparse.urljoin(document_url, source_url)
 
+    def base_url(self, url):
+        """
+        returns the url given without a fragment identifier
+        """
+        parts = urlparse.urlparse(url)
+        return urlparse.urlunparse(parts[0:5] + ('',))
 
     def attach_warning(self, target, message): 
         """
@@ -145,4 +226,10 @@ class Transcluder:
         """
         target.set("title", message)
 
-
+    def attach_warning_all(self, document, message):
+        """
+        add the warning 'message' to all transcluder
+        links in the document 
+        """
+        for x in self.get_transcluder_links(document):
+            self.attach_warning(x, message)
