@@ -332,9 +332,10 @@ def run_dir(dir):
     static_app = StaticURLParser(dir)
     trans_app = TranscluderMiddleware(static_app)
     app = TestApp(trans_app)
-
+    expected_app = TestApp(static_app)
+    
     result = app.get('/index.html')
-    expected = app.get('/expected.html')
+    expected = expected_app.get('/expected.html')
     html_string_compare(result.body, expected.body)
 
 def test_internal():
