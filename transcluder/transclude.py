@@ -148,13 +148,12 @@ class Transcluder:
 
         deps = Set() 
 
-        if self.should_recurse(document_url):
-            target_links = self.get_transcluder_links(document)
-            for target in target_links: 
-                source_url = self.get_include_url(target, document_url)
-                if (source_url is not None and
-                    self.should_include(source_url)):
-                    deps.add(self.base_url(source_url))
+        target_links = self.get_transcluder_links(document)
+        for target in target_links: 
+            source_url = self.get_include_url(target, document_url)
+            if (source_url is not None and
+                self.should_include(source_url)):
+                deps.add(self.base_url(source_url))
 
         return list(deps)
 
