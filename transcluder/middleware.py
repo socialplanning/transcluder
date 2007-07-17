@@ -3,6 +3,7 @@ Transclusion WSGI middleware
 """
 import traceback
 import httplib
+import re
 
 from paste.request import construct_url
 from paste.response import header_value, replace_header
@@ -103,9 +104,14 @@ class TranscluderMiddleware:
         start_response(status, headers)
         return [body]
 
-    def is_html(self, status, headers):
+    HTML_DOC_PAT = re.compile(r"^.*<\s*html(\s*|>).*$",re.I|re.M)
+    def is_html(self, status, headers, body):
         type = header_value(headers, 'content-type')
-        return type and (type.startswith('text/html') or type.startswith('application/xhtml+xml'))
+        if type and (type.startswith('text/html') or type.startswith('application/xhtml+xml')):
+            if self.HTML_DOC_PAT.search(body) is not None:
+                return True
+            
+        return False
 
 
     def get_template_vars(self, url): 
@@ -144,7 +150,7 @@ class TranscluderMiddleware:
             else:
                 status, headers, body = get_external_resource(url, env)
 
-            if status.startswith('200') and self.is_html(status, headers):
+            if status.startswith('200') and self.is_html(status, headers, body):
                 parsed = etree.HTML(body)
             else:
                 parsed = None
