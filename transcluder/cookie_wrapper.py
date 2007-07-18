@@ -326,15 +326,6 @@ def make_cookie_string(cookies):
     """
     flattens a cookie map into a string suitable 
     for use as the value of the http Cookie header. 
-    Note: if you change this to make it unstable, 
-    change deptracker too.
     """
-    cookie_strings = []
-    for cookie in cookies:
-        extra = ''
-        if cookie['domain'].startswith('.'):
-            extra = ';domain=%s' % cookie['domain']
-        if cookie.has_key('path'):
-            extra += ';path=%s' % cookie['path']
-        cookie_strings.append("%s=%s%s" % (cookie['name'], cookie['value'], extra))
-    return ",".join(cookie_strings)
+
+    return "; ".join(["%s=%s" % (cookie['name'], cookie['value']) for cookie in cookies])

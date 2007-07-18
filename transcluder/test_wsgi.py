@@ -272,7 +272,8 @@ class SequentialCookieMiddleware:
 
         self.seqnum += 1
 
-        cookies_fmt = ','.join(sorted(environ['HTTP_COOKIE'].split(',')))
+        cookies = [x.strip() for x in environ['HTTP_COOKIE'].split(';')]
+        cookies_fmt = ','.join(sorted(cookies))
         
         body = '<html><head></head><body>%s</body></html>' % cookies_fmt
             

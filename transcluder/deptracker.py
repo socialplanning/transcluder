@@ -3,12 +3,26 @@ from threading import RLock
 from transcluder.locked import locked
 from transcluder.cookie_wrapper import get_relevant_cookies, make_cookie_string
 
+def _merge_cookie_info(cookies):
+    cookie_strings = []
+    for cookie in cookies:
+        extra = ''
+        if cookie['domain'].startswith('.'):
+            extra = ';domain=%s' % cookie['domain']
+        if cookie.has_key('path'):
+            extra += ';path=%s' % cookie['path']
+        cookie_strings.append("%s=%s%s" % (cookie['name'], cookie['value'], extra))
+    return ",".join(cookie_strings)
+
+
 def make_resource_key(url, environ): 
     cookies = [] 
     if environ.has_key('transcluder.incookies'): 
         cookies = get_relevant_cookies(environ['transcluder.incookies'], url)
 
-    return (url, make_cookie_string(cookies))
+    cookies_id = _merge_cookie_info(cookies)
+
+    return (url, cookies_id)
 
 class DependencyTracker: 
     def __init__(self): 
