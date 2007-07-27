@@ -390,9 +390,9 @@ class PageManager:
         
         merge_cache_headers(response_info, headers)
 
-        newcookie = wrap_cookies(cookies.values())
-        if newcookie is not None: 
-            headers.append(('Set-Cookie', newcookie)) # replace? 
+        newcookies = wrap_cookies(cookies.values())
+        for newcookie in newcookies: 
+            headers.append(('Set-Cookie', newcookie)) 
 
 
     @locked

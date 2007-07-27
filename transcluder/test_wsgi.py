@@ -222,7 +222,7 @@ class AnyDomainTranscluderMiddleware(TranscluderMiddleware):
         pat = re.compile('[a-z]*.example.com')
         return pat.sub("localhost", url)
 
-class CookieMiddlware:
+class CookieMiddleware:
     def __init__(self, app):
         self.app = app
 
@@ -244,7 +244,7 @@ def test_cookie():
     base_dir = os.path.dirname(__file__)
     test_dir = os.path.join(base_dir, 'test-data', 'cookie')
     static_app = StaticURLParser(test_dir)
-    cookie_app = CookieMiddlware(static_app)
+    cookie_app = CookieMiddleware(static_app)
     transcluder = AnyDomainTranscluderMiddleware(cookie_app)
     test_app = TestApp(transcluder)
     test_static_app = TestApp(static_app)

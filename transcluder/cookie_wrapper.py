@@ -123,7 +123,7 @@ def get_set_cookies_from_headers(headers, url):
     cookie_headers = [x[1] for x in headers if x[0].lower() == 'set-cookie']
     cookies = parse_setcookie_headers(cookie_headers)
 
-    # print "GSCFH(%s) in: %s / (%s)" % (url, cookies, cookie_headers)
+    #print "GSCFH(%s) in: %s / (%s)" % (url, cookies, cookie_headers)
     
     cookies_by_key = {}
     for cookie_dict in cookies: 
@@ -155,10 +155,37 @@ def get_set_cookies_from_headers(headers, url):
 
     return cookies_by_key
 
-WRAPPED_COOKIE_NAME = '__wf_wrapped__'
+
+SESSION_COOKIE_NAME = '__cw_wrapped_session__'
+DURABLE_COOKIE_NAME = '__cw_wrapped__'
+def wrap_cookies(cookies):
+    """
+    returns a list of set-cookie header values created
+    by wrapping the cookies in the list of cookie maps
+    given
+    """
+    out_cookies = []
+
+    session = _wrap_cookies(session_cookies(cookies), SESSION_COOKIE_NAME)
+    durable = _wrap_cookies(durable_cookies(cookies), DURABLE_COOKIE_NAME, 
+                            extra_attrs={'max-age': 2147368447})
+    if session:
+        out_cookies.append(session)
+    if durable:
+        out_cookies.append(durable)
+
+    return out_cookies
+    
+def session_cookies(cookies):
+    return [x for x in cookies if not x.has_key('expires')]
+
+def durable_cookies(cookies):
+    return [x for x in cookies if x.has_key('expires')]
+
+
 cookie_attributes = ['name', 'value', 'domain', 'path',
                      'expires', 'secure', 'version']
-def wrap_cookies(cookies, extra_attrs=None):
+def _wrap_cookies(cookies, cookie_name, extra_attrs=None):
     """Converts a set of cookies into a single cookie
 
     accepts a list of 'cookie-maps' associating the name and value of 
@@ -172,24 +199,25 @@ def wrap_cookies(cookies, extra_attrs=None):
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/morx')]
     >>> url = 'http://www.example.com/morx/fleem'
     >>> x = get_set_cookies_from_headers(headers, url).values()
-    >>> x == unwrap_cookies(wrap_cookies(x))
+    >>> x == _unwrap_cookies(_wrap_cookies(x, 'foo'), ['foo'])
     True
 
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo, foo=bar; domain=.example.com')]
     >>> url = 'http://www.example.com/zoo/bar'
     >>> x = get_set_cookies_from_headers(headers, url).values()
-    >>> x == unwrap_cookies(wrap_cookies(x))
+    >>> x == _unwrap_cookies(_wrap_cookies(x, 'foo'), ['foo'])
     True
+
 
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo'), ('Set-Cookie', 'foo=bar; domain=.example.com')]
     >>> url = 'http://www.example.com/zoo/bar'
     >>> x = get_set_cookies_from_headers(headers, url).values()
-    >>> y = unwrap_cookies(wrap_cookies(x))
+    >>> y = _unwrap_cookies(_wrap_cookies(x, 'foo'), ['foo'])
     >>> x == y 
     True
 
     """
-    # print "wrapping %s" % cookies
+    #print "wrapping %s" % cookies
     
     if len(cookies) == 0:
         return None
@@ -206,13 +234,10 @@ def wrap_cookies(cookies, extra_attrs=None):
     b64enc = base64.b64encode(merged)
     cookie_val = b64enc.replace('=','@')
 
-    wrapped_cookie = "%s=%s" % (WRAPPED_COOKIE_NAME, cookie_val) 
+    wrapped_cookie = "%s=%s" % (cookie_name, cookie_val) 
     if not extra_attrs: 
         extra_attrs = {}
 
-    if not extra_attrs.has_key('max-age') and not extra_attrs.has_key('expires'):
-        extra_attrs['max-age'] = 2147368447        
-    
     if extra_attrs.has_key('expires') and isinstance(extra_attrs['expires'], str):
         tmp = []
         httpheaders.LAST_MODIFIED.update(tmp, time=extra_attrs['expires'])
@@ -226,7 +251,14 @@ def wrap_cookies(cookies, extra_attrs=None):
 
     return wrapped_cookie 
 
-def unwrap_cookies(cookie_header): 
+def unwrap_cookies(cookie_header):
+    """
+    """
+
+    return _unwrap_cookies(cookie_header, [SESSION_COOKIE_NAME,
+                                           DURABLE_COOKIE_NAME])
+
+def _unwrap_cookies(cookie_header, cookie_names): 
     """
     Unwraps any wrapped cookies in the cookie header value
     given, returns list of cookie-maps. 
@@ -234,16 +266,16 @@ def unwrap_cookies(cookie_header):
     >>> headers = [('Set-Cookie', 'name=value;domain=.example.com;path=/zoo, foo=bar; domain=.example.com')]
     >>> url = 'http://www.example.com/zoo/bar'
     >>> cookies = get_set_cookies_from_headers(headers, url).values()
-    >>> x = wrap_cookies(cookies)
-    >>> unwrapped = unwrap_cookies('quux=zoo; %s; blurn=blarg' % x)
+    >>> x = _wrap_cookies(cookies, 'foo')
+    >>> unwrapped = _unwrap_cookies('quux=zoo; %s; blurn=blarg' % x, ['foo'])
     >>> cookies == unwrapped
     True
 
-    >>> unwrap_cookies('foo=bar; domain=.example.com')
+    >>> _unwrap_cookies('foo=bar; domain=.example.com', ['missing_cookie'])
     []
-    >>> unwrap_cookies('%s=somegarbage' % WRAPPED_COOKIE_NAME)
+    >>> _unwrap_cookies('%s=somegarbage' % '__wf_wrapped__', ['__wf_wrapped__'])
     []
-    >>> unwrap_cookies('foo=bar; domain=.example.com, name=value; domain=.baz.org')
+    >>> _unwrap_cookies('foo=bar; domain=.example.com, name=value; domain=.baz.org', ['__wf_wrapped__'])
     []
     """
     cookies = parse_cookie_header(cookie_header)
@@ -252,7 +284,7 @@ def unwrap_cookies(cookie_header):
 
     unwrapped = []
     for cookie in cookies:
-        if cookie['name'] == WRAPPED_COOKIE_NAME: 
+        if cookie['name'] in cookie_names: 
             try:
                 unwrapped += unwrap_cookie_val(cookie['value'])
             except Exception:
@@ -318,7 +350,7 @@ def get_relevant_cookies(jar, url):
     cks = [x for x in jar if domain_match(domain, x['domain'])
             and path.startswith(x.get('path',''))]
 
-    # print "get_relevant_cookies(%s,%s) => %s" % (jar, url, cks)
+    #print "get_relevant_cookies(%s,%s) => %s" % (jar, url, cks)
 
     return cks
 
