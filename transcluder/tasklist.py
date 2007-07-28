@@ -378,21 +378,28 @@ class PageManager:
         cookies = {}
         in_cookies = self._environ['transcluder.incookies']
         for cookie_map in in_cookies:
-            id = (cookie_map['domain'],
-                  cookie_map.get('path',''),
-                  cookie_map['name'])
-            cookies[id] = cookie_map
-        
+            key = cookie_key(cookie_map)
+            cookies[key] = cookie_map
+
         for url in self._actual_deps:
             response_info[url] = self._page_archive[url][0:3]
             status, page_headers, body, parsed = self._page_archive[url]
-            cookies.update(get_set_cookies_from_headers(page_headers, url))
+            new_setcookies = get_set_cookies_from_headers(page_headers, url)
+            cookies.update(new_setcookies)
         
         merge_cache_headers(response_info, headers)
 
-        newcookies = wrap_cookies(cookies.values())
+
+        if 'HTTP_COOKIE' in self._environ:
+            newcookies = wrap_cookies(cookies.values(), oldcookies=self._environ['HTTP_COOKIE'])
+        else:
+            newcookies = wrap_cookies(cookies.values())
+
+        # XXX probably should just not send any other
+        # cookies except these ? 
         for newcookie in newcookies: 
-            headers.append(('Set-Cookie', newcookie)) 
+            headers.append(('Set-Cookie', newcookie))
+
 
 
     @locked

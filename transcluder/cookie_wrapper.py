@@ -20,7 +20,8 @@ __all__ = ['parse_setcookie_headers',
            'get_set_cookies_from_headers', 
            'wrap_cookies', 
            'unwrap_cookies', 
-           'expire_cookies', 
+           'expire_cookies',
+           'cookie_key',
            'get_relevant_cookies', 
            'make_cookie_string' ]
 
@@ -72,6 +73,11 @@ def make_cookie_dict(c):
 
     return cookie_dict
 
+def cookie_key(cookie_map):
+    return (cookie_map['domain'],
+            cookie_map.get('path',''),
+            cookie_map['name'])
+    
 def get_set_cookies_from_headers(headers, url):
     """Parses Set-Cookie headers which are legitimate for the
     URL given. (rather than getting and/or setting Cookie headers).
@@ -149,20 +155,46 @@ def get_set_cookies_from_headers(headers, url):
         if ':' in domain:
             cookie_dict['domain'] = domain[:domain.index(":")]
 
-        path = cookie_dict.get('path', '')
-        key = (cookie_dict['domain'], path, cookie_dict['name'])
-        cookies_by_key [key] = cookie_dict
+        key = cookie_key(cookie_dict)
+        cookies_by_key[key] = cookie_dict
 
     return cookies_by_key
 
 
 SESSION_COOKIE_NAME = '__cw_wrapped_session__'
 DURABLE_COOKIE_NAME = '__cw_wrapped__'
-def wrap_cookies(cookies):
+def wrap_cookies(cookies, oldcookies=''):
     """
     returns a list of set-cookie header values created
     by wrapping the cookies in the list of cookie maps
     given
+
+    oldcookies is an optional Cookie header value. If
+    specified, cookies which should no longer appear
+    in the output will be issued as a cookie expiring
+    in the past.
+
+
+    the cookies are separated into a session long cookie
+    and a more persistent cookie which contains longer
+    lived cookies. 
+    >>> url = 'http://www.example.com/morx/fleem'
+    >>> headers = [('Set-Cookie', 'abc=123'), ('Set-Cookie', 'def=123; max-age=1000')]
+    >>> x = get_set_cookies_from_headers(headers, url).values()
+    >>> wcs = wrap_cookies(x)
+    >>> wcs[0].startswith(SESSION_COOKIE_NAME)
+    True
+    >>> wcs[1].startswith(DURABLE_COOKIE_NAME)
+    True
+    >>> _unwrap_cookies(wcs[0], [SESSION_COOKIE_NAME])[0]['name'] == 'abc'
+    True
+    >>> _unwrap_cookies(wcs[1], [DURABLE_COOKIE_NAME])[0]['name'] == 'def'
+    True
+
+    if there is no cookie, but there was an old cookie,
+    a delete is issued
+    >>> wrap_cookies([], oldcookies='__cw_wrapped_session__=whatever')
+    ['__cw_wrapped_session__=deleted; expires=Monday, 01-Jan-90 00:00:01 GMT; path=/']
     """
     out_cookies = []
 
@@ -171,8 +203,13 @@ def wrap_cookies(cookies):
                             extra_attrs={'max-age': 2147368447})
     if session:
         out_cookies.append(session)
+    elif has_cookie(oldcookies, SESSION_COOKIE_NAME):
+        out_cookies.append(make_expire_cookie(SESSION_COOKIE_NAME))
+        
     if durable:
         out_cookies.append(durable)
+    elif has_cookie(oldcookies, DURABLE_COOKIE_NAME):
+        out_cookies.append(make_expire_cookie(DURABLE_COOKIE_NAME))
 
     return out_cookies
     
@@ -181,6 +218,19 @@ def session_cookies(cookies):
 
 def durable_cookies(cookies):
     return [x for x in cookies if x.has_key('expires')]
+
+def has_cookie(cookie_header, cookie_name):
+    """
+    returns True if a Cookie: header value
+    has a cookie with the name given
+    """
+    for cookie in parse_cookie_header(cookie_header):
+        if cookie.get('name','') == cookie_name:
+            return True
+    return False
+
+def make_expire_cookie(cookie_name):
+    return "%s=deleted; expires=Monday, 01-Jan-90 00:00:01 GMT; path=/" % cookie_name
 
 
 cookie_attributes = ['name', 'value', 'domain', 'path',
@@ -282,24 +332,24 @@ def _unwrap_cookies(cookie_header, cookie_names):
     if not cookies:
         return []
 
-    unwrapped = []
+    unwrapped = {}
     for cookie in cookies:
         if cookie['name'] in cookie_names: 
             try:
-                unwrapped += unwrap_cookie_val(cookie['value'])
+                cms = unwrap_cookie_val(cookie['value'])
+                for cm in cms:
+                    unwrapped[cookie_key(cm)] = cm
             except Exception:
                 # XXX log
                 pass
-    return unwrapped 
+    return unwrapped.values()
 
 def unwrap_cookie_val(cookie): 
     """
     splits a wrapped cookie value created with wrap_cookies
     into component cookie-maps 
     """
-
-
-
+    
     if not cookie:
         return []
 
@@ -327,9 +377,14 @@ def expire_cookies(cookies):
     """
     out = []
     now = time.time()
+    
     for cookie in cookies:
-        if not cookie.has_key('expires') or cookie['expires'] > now:
+        if not cookie.has_key('expires'):
             out.append(cookie)
+        else:
+            expire_time = int(cookie['expires'])
+            if expire_time > now:
+                out.append(cookie)
     return out
 
 
