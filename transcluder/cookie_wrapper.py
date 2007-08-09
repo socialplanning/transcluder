@@ -60,7 +60,7 @@ def parse_cookie_header(cookie_header_val):
 def make_cookie_dict(c):
     cookie_dict = {}
     for k, v in c[1:]:
-        cookie_dict[k.lower()] = v
+        cookie_dict[k.lower()] = str(v)
     cookie_dict['name'], cookie_dict['value'] = c[0]
 
     #if cookie_dict.has_key('expires'):
@@ -122,7 +122,7 @@ def get_set_cookies_from_headers(headers, url):
 
 
     >>> headers = [('Set-Cookie', 'BMLschemepref=; expires=Thursday, 01-Jan-1970 00:00:00 GMT; path=/; domain=.example.com')]
-    >>> get_set_cookies_from_headers(headers, url) ==  {('.example.com', '/', 'BMLschemepref'): {'path': '/', 'domain': '.example.com', 'expires': 0, 'name': 'BMLschemepref', 'version': '0', 'value': ''}}
+    >>> get_set_cookies_from_headers(headers, url) ==  {('.example.com', '/', 'BMLschemepref'): {'path': '/', 'domain': '.example.com', 'expires': '0', 'name': 'BMLschemepref', 'version': '0', 'value': ''}}
     True
     
     """
@@ -200,7 +200,7 @@ def wrap_cookies(cookies, oldcookies=''):
 
     session = _wrap_cookies(session_cookies(cookies), SESSION_COOKIE_NAME)
     durable = _wrap_cookies(durable_cookies(cookies), DURABLE_COOKIE_NAME, 
-                            extra_attrs={'max-age': 2147368447})
+                            extra_attrs={'max-age': '2147368447'})
     if session:
         out_cookies.append(session)
     elif has_cookie(oldcookies, SESSION_COOKIE_NAME):
