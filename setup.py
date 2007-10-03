@@ -20,7 +20,7 @@ setup(name="Transcluder",
       author="The Open Planning Project",
       author_email="",
       url="",
-      license="",
+      license="MIT",
       packages=find_packages(exclude=[]),
       zip_safe=False,
       install_requires=[
