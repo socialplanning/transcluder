@@ -1,3 +1,9 @@
+
+# Copyright (c) 2007 The Open Planning Project.
+
+# Transcluder is Free Software.  See license.txt for licensing terms
+
+
 from wsgifilter.proxyapp import ForcedProxy
 from transcluder.middleware import TranscluderMiddleware
 

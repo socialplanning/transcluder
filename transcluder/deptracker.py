@@ -1,3 +1,9 @@
+
+# Copyright (c) 2007 The Open Planning Project.
+
+# Transcluder is Free Software.  See license.txt for licensing terms
+
+
 from sets import Set
 from threading import RLock 
 from transcluder.locked import locked

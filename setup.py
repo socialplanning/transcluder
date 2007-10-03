@@ -1,3 +1,9 @@
+
+# Copyright (c) 2007 The Open Planning Project.
+
+# Transcluder is Free Software.  See license.txt for licensing terms
+
+
 __version__ = '0.1'
 
 from setuptools import setup, find_packages

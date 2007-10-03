@@ -1,3 +1,9 @@
+
+# Copyright (c) 2007 The Open Planning Project.
+
+# Transcluder is Free Software.  See license.txt for licensing terms
+
+
 from cookielib import parse_ns_headers 
 from cookielib import domain_match, IPV4_RE, http2time
 from Cookie import SimpleCookie

@@ -1,3 +1,9 @@
+
+# Copyright (c) 2007 The Open Planning Project.
+
+# Transcluder is Free Software.  See license.txt for licensing terms
+
+
 # Note: test_parallel_gets has been renamed to teXst_parallel_gets so
 # that it does not get run by default, because it is slow.  Also, the __main__ stuff has been
 # removed
