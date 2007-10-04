@@ -52,8 +52,6 @@ class TranscluderMiddleware:
 
     def __call__(self, environ, start_response):
         environ = environ.copy()
-
-        environ[TRANSCLUDED_HTTP_HEADER] = 'True'
         
         environ['transcluder.outcookies'] = {}
         if environ.has_key('HTTP_COOKIE'):
@@ -68,7 +66,8 @@ class TranscluderMiddleware:
             environ['transcluder.etags'] = {}
 
         request_url = construct_url(environ)
-
+        environ[TRANSCLUDED_HTTP_HEADER] = request_url
+        
         variables = self.get_template_vars(request_url)
         
         tc = Transcluder(variables, None,
