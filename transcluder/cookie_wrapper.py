@@ -408,7 +408,8 @@ def get_relevant_cookies(jar, url):
     if ':' in domain:
         domain = domain[:domain.index(':')]
 
-    cks = [x for x in jar if domain_match(domain, x['domain'])
+    cks = [x for x in jar if (domain_match(domain, x['domain']) or
+                              domain == 'localhost')
             and path.startswith(x.get('path',''))]
 
     #print "get_relevant_cookies(%s,%s) => %s" % (jar, url, cks)
