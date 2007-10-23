@@ -210,8 +210,11 @@ class FetchListItem(WorkRequest):
         except: 
             traceback.print_exc() 
 
-    def _do_fetch(self): 
-        self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url)) # XXX transcluder dependencey
+    def _do_fetch(self):
+        # XXX transcluder dependency
+        # Do not munge cookies -- send them along instead
+        #self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
+        self.environ['HTTP_COOKIE'] = ";".join(['%s=%s' % (c['name'], c['value']) for c in get_relevant_cookies(self.environ['transcluder.incookies'], self.url)])
 
         if self.request_type == RequestType.conditional_get:
             assert 'HTTP_IF_NONE_MATCH' in self.environ or 'HTTP_IF_MODIFIED_SINCE' in self.environ
