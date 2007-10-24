@@ -95,10 +95,11 @@ class TranscluderMiddleware:
         status, headers, body, parsed = pm.fetch(request_url)
 
         if parsed: 
-            tc.transclude(parsed, request_url)
-            # XXX doctype 
-            body = lxmlutils.tostring(parsed, doctype_pair=("-//W3C//DTD HTML 4.01 Transitional//EN",
-                                                            "http://www.w3.org/TR/html4/loose.dtd"))
+            if tc.transclude(parsed, request_url):
+                # XXX doctype 
+                body = lxmlutils.tostring(parsed, doctype_pair=("-//W3C//DTD HTML 4.01 Transitional//EN",
+                                                                "http://www.w3.org/TR/html4/loose.dtd"))
+            #else no need to change body at all
             replace_header(headers, 'content-length', str(len(body)))
             replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 

@@ -84,6 +84,8 @@ class Transcluder:
             _cache = {}
 
         target_links = self.get_transcluder_links(document)
+        if not target_links:
+            return False #nothing to transclude
         for target in target_links:
             source_url = self.get_include_url(target, document_url) 
 
@@ -108,7 +110,7 @@ class Transcluder:
                 self.attach_warning(target, "Failed to retrieve (%s), url: %s"
                                     % (message, source_url))
                 # XXX should log traceback.format_exc() ?  
-
+        return True
 
     def _get(self, source_url, depth, cache):
         """
