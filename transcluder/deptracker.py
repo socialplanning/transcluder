@@ -13,7 +13,7 @@ def _merge_cookie_info(cookies):
     cookie_strings = []
     for cookie in cookies:
         extra = ''
-        if cookie['domain'].startswith('.'):
+        if cookie.get('domain', 'localhost').startswith('.'):
             extra = ';domain=%s' % cookie['domain']
         if cookie.has_key('path'):
             extra += ';path=%s' % cookie['path']

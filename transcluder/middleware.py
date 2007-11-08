@@ -55,9 +55,9 @@ class TranscluderMiddleware:
         
         environ['transcluder.outcookies'] = {}
         if environ.has_key('HTTP_COOKIE'):
-            environ['transcluder.incookies'] = expire_cookies(unwrap_cookies(environ['HTTP_COOKIE']))
+            environ['transcluder.incookies'] = parse_cookie_header(environ['HTTP_COOKIE'])
         else:
-            environ['transcluder.incookies'] = {}
+            environ['transcluder.incookies'] = []
 
 
         if environ.has_key('HTTP_IF_NONE_MATCH'): 

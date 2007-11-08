@@ -192,6 +192,9 @@ class FetchList:
 
         return True
 
+def join_cookies(cookies):
+    return ";".join(['%s=%s' % (c['name'], c['value']) for c in cookies])
+
 RequestType = Enum('conditional_get', 'get')
 
 class FetchListItem(WorkRequest): 
@@ -214,7 +217,7 @@ class FetchListItem(WorkRequest):
         # XXX transcluder dependency
         # Do not munge cookies -- send them along instead
         #self.environ['HTTP_COOKIE'] = make_cookie_string(get_relevant_cookies(self.environ['transcluder.incookies'], self.url))
-        self.environ['HTTP_COOKIE'] = ";".join(['%s=%s' % (c['name'], c['value']) for c in get_relevant_cookies(self.environ['transcluder.incookies'], self.url)])
+        self.environ['HTTP_COOKIE'] = join_cookies (self.environ['transcluder.incookies'])
 
         if self.request_type == RequestType.conditional_get:
             assert 'HTTP_IF_NONE_MATCH' in self.environ or 'HTTP_IF_MODIFIED_SINCE' in self.environ
@@ -384,30 +387,16 @@ class PageManager:
         assert self._state == PMState.done or self._state == PMState.not_modified 
 
         response_info = {} 
-        cookies = {}
-        in_cookies = self._environ['transcluder.incookies']
-        for cookie_map in in_cookies:
-            key = cookie_key(cookie_map)
-            cookies[key] = cookie_map
-
+        newcookies = []
         for url in self._actual_deps:
             response_info[url] = self._page_archive[url][0:3]
             status, page_headers, body, parsed = self._page_archive[url]
-            new_setcookies = get_set_cookies_from_headers(page_headers, url)
-            cookies.update(new_setcookies)
+            newcookies += [x[1] for x in page_headers if x[0].lower() == 'set-cookie']
         
         merge_cache_headers(response_info, headers)
 
-
-        if 'HTTP_COOKIE' in self._environ:
-            newcookies = wrap_cookies(cookies.values(), oldcookies=self._environ['HTTP_COOKIE'])
-        else:
-            newcookies = wrap_cookies(cookies.values())
-
-        # XXX probably should just not send any other
-        # cookies except these ? 
-        for newcookie in newcookies: 
-            headers.append(('Set-Cookie', newcookie))
+        for cookie in newcookies:
+            headers.append(('Set-Cookie', cookie))
 
 
 

@@ -80,8 +80,8 @@ def make_cookie_dict(c):
     return cookie_dict
 
 def cookie_key(cookie_map):
-    return (cookie_map['domain'],
-            cookie_map.get('path',''),
+    return (cookie_map.get('domain', 'localhost'),
+            cookie_map.get('path','/'),
             cookie_map['name'])
     
 def get_set_cookies_from_headers(headers, url):
@@ -408,7 +408,7 @@ def get_relevant_cookies(jar, url):
     if ':' in domain:
         domain = domain[:domain.index(':')]
 
-    cks = [x for x in jar if (domain_match(domain, x['domain']) or
+    cks = [x for x in jar if (domain_match(domain, x.get('domain', 'localhost')) or
                               domain == 'localhost')
             and path.startswith(x.get('path',''))]
 
