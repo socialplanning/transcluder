@@ -24,7 +24,7 @@ setup(name="Transcluder",
       packages=find_packages(exclude=[]),
       zip_safe=False,
       install_requires=[
-        'lxml',
+        'lxml>=1.2,<2.0dev',
         'Paste >= 1.3',
         'PasteScript',
         'FormEncode', 
