@@ -21,7 +21,7 @@ import lxmlutils
 from transcluder import helpers 
 from transcluder.transclude import Transcluder
 
-from wsgifilter.resource_fetcher import *
+from wsgifilter.resource_fetcher import get_internal_resource, get_external_resource, get_file_resource
 from wsgifilter.cache_utils import parse_merged_etag
 from transcluder.cookie_wrapper import * 
 from transcluder.tasklist import PageManager, TaskList
@@ -51,6 +51,8 @@ class TranscluderMiddleware:
             self.tasklist = TaskList()
 
     def __call__(self, environ, start_response):
+        if not environ.get('transcluder.transclude_response', True):
+            return self.app(environ, start_response)
         environ = environ.copy()
         
         environ['transcluder.outcookies'] = {}
@@ -152,7 +154,8 @@ class TranscluderMiddleware:
             elif url_parts[0] == 'file':
                 status, headers, body = get_file_resource(file, env)
             elif request_url_parts[0:2] == url_parts[0:2]:
-                status, headers, body = get_internal_resource(url, env, self.app)
+                status, headers, body = get_internal_resource(url, env, self.app, add_to_environ={'transcluder.transclude_response': False,
+                                                                                                  TRANSCLUDED_HTTP_HEADER: env[TRANSCLUDED_HTTP_HEADER]})
             else:
                 status, headers, body = get_external_resource(url, env)
 
