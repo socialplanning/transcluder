@@ -15,7 +15,6 @@ from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key
 from locked import locked
 import time 
-import traceback 
 import threading
 
 class trackingSet(Set):
@@ -208,11 +207,8 @@ class FetchListItem(WorkRequest):
         WorkRequest.__init__(self, self)
 
     def __call__(self):
-        try: 
-            self._do_fetch() 
-        except: 
-            traceback.print_exc() 
-
+        self._do_fetch() 
+        
     def _do_fetch(self):
         # XXX transcluder dependency
         # Do not munge cookies -- send them along instead

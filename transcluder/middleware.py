@@ -7,7 +7,6 @@
 """
 Transclusion WSGI middleware
 """
-import traceback
 import httplib
 import re
 
@@ -134,48 +133,33 @@ class TranscluderMiddleware:
         return url
 
     def etree_subrequest(self, url, environ):
-        try: 
-            effective_url = self.premangle_subrequest(url, environ)
+        effective_url = self.premangle_subrequest(url, environ)
 
-            url_parts = urlparse(effective_url)
-            env = environ.copy()
+        url_parts = urlparse(effective_url)
+        env = environ.copy()
 
-            env['PATH_INFO'] = url_parts[2]
-            if len(url_parts[4]):
-                env['QUERY_STRING'] = url_parts[4]
+        env['PATH_INFO'] = url_parts[2]
+        if len(url_parts[4]):
+            env['QUERY_STRING'] = url_parts[4]
 
 
-            request_url = construct_url(environ, with_path_info=False,
-                                        with_query_string=False)
-            request_url_parts = urlparse(request_url)
+        request_url = construct_url(environ, with_path_info=False,
+                                    with_query_string=False)
+        request_url_parts = urlparse(request_url)
 
-            if url == construct_url(environ):
-                status, headers, body = intercept_output(environ, self.app)
-            elif url_parts[0] == 'file':
-                status, headers, body = get_file_resource(file, env)
-            elif request_url_parts[0:2] == url_parts[0:2]:
-                status, headers, body = get_internal_resource(url, env, self.app, add_to_environ={'transcluder.transclude_response': False,
-                                                                                                  TRANSCLUDED_HTTP_HEADER: env[TRANSCLUDED_HTTP_HEADER]})
-            else:
-                status, headers, body = get_external_resource(url, env)
+        if url == construct_url(environ):
+            status, headers, body = intercept_output(environ, self.app)
+        elif url_parts[0] == 'file':
+            status, headers, body = get_file_resource(file, env)
+        elif request_url_parts[0:2] == url_parts[0:2]:
+            status, headers, body = get_internal_resource(url, env, self.app, add_to_environ={'transcluder.transclude_response': False,
+                                                                                                 TRANSCLUDED_HTTP_HEADER: env[TRANSCLUDED_HTTP_HEADER]})
+        else:
+            status, headers, body = get_external_resource(url, env)
 
-            if status.startswith('200') and self.is_html(status, headers, body):
-                parsed = etree.HTML(body)
-            else:
-                parsed = None
+        if status.startswith('200') and self.is_html(status, headers, body):
+            parsed = etree.HTML(body)
+        else:
+            parsed = None
 
-            return status, headers, body, parsed
-        except Exception, message:
-            # httplib throws all sorts of fun exceptions to here
-            # some from socket and elsewhere when minor normal
-            # problems occur. Many of these should be consumed 
-            # to allow subpage fetching failures to occur gracefully.
-            # the option to freak out is preserved by returning a
-            # 500 status code.
-            
-            # XXX should be logged
-            traceback.print_exc()
-            err = str(message) # traceback.format_exc()
-            headers = [('content-length',len(err)),
-                       ('content-type','text/plain')]
-            return ('500 Server Error', headers, err, None)
+        return status, headers, body, parsed
