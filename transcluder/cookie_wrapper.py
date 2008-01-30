@@ -12,7 +12,7 @@ import time
 import re
 from urlparse import urlparse 
 from paste import httpheaders
-import traceback
+
 
 """
 utilities for merging cookies from various sources 
