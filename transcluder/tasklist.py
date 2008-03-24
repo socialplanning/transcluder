@@ -14,6 +14,7 @@ from wsgifilter.cache_utils import merge_cache_headers, parse_merged_etag
 from transcluder.threadpool import WorkRequest, ThreadPool
 from transcluder.deptracker import make_resource_key
 from locked import locked
+import sys
 import time 
 import threading
 
@@ -228,7 +229,17 @@ class FetchListItem(WorkRequest):
             if 'HTTP_IF_NONE_MATCH' in self.environ:
                 del self.environ['HTTP_IF_NONE_MATCH']
 
-        self.response = self.page_manager.request(self.url, self.environ)
+        try:
+            self.response = self.page_manager.request(self.url, self.environ)
+        except:
+            exc_class, exc, tb = sys.exc_info()
+            #transmute response to 500.  Boy does this suck!  We need this
+            #because httplib2 raises string exceptions, which are the worst
+            #thing ever.
+            if isinstance(exc_class, basestring):
+                self.response = ('500 transmuted socket-layer error', [], "the error is: %s" % exc_class, None)
+            else:
+                self.response = ('500 transmuted socket-layer error', [], "the error is: %s" % exc, None)
 
         if self.response[0].startswith('304'):
             self.page_manager.got_304(self)
