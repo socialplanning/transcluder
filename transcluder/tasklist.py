@@ -233,7 +233,7 @@ class FetchListItem(WorkRequest):
         if self.response[0].startswith('304'):
             self.page_manager.got_304(self)
         else:
-            self.page_manager.got_200(self)
+            self.page_manager.got_non_redirect(self)
 
     def archive_info(self): 
         return self.response
@@ -376,9 +376,9 @@ class PageManager:
     def merge_headers_into(self, headers):        
         if not (self._state == PMState.done or self._state == PMState.not_modified):
             print "Bad state %s" % self._state
-            print self._actual_deps
-            print self._page_archive
-            print self._needed
+            print "actual deps", self._actual_deps
+            print "page archive", self._page_archive.keys()
+            print "needed", self._needed
 
         assert self._state == PMState.done or self._state == PMState.not_modified 
 
@@ -443,7 +443,7 @@ class PageManager:
         self.cv.notifyAll()
         
     @locked 
-    def got_200(self, task): 
+    def got_non_redirect(self, task): 
         self._page_archive[task.url] = task.archive_info() 
         
         # update dependencies 
