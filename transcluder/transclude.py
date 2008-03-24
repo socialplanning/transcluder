@@ -107,10 +107,10 @@ class Transcluder:
                     self.merge(target, subdoc, source_url)
 
 
-             except object, message:
-                 print "HERE", message
-                 self.attach_warning(target, "Failed to retrieve (%s), url: %s"
-                                     % (message, source_url))
+            except object, message:
+                print "HERE", message
+                self.attach_warning(target, "Failed to retrieve (%s), url: %s"
+                                    % (message, source_url))
                 # XXX should log traceback.format_exc() ?  
         return True
 
