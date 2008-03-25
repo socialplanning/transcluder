@@ -239,7 +239,7 @@ class FetchListItem(WorkRequest):
             if isinstance(exc_class, basestring):
                 self.response = ('500 transmuted socket-layer error', [], "the error is: %s" % exc_class, None)
             else:
-                self.response = ('500 transmuted socket-layer error', [], "the error is: %s" % exc, None)
+                self.response = ('500 server error', [], "the error is: %s" % exc, None)
 
         if self.response[0].startswith('304'):
             self.page_manager.got_304(self)
