@@ -240,6 +240,10 @@ class FetchListItem(WorkRequest):
                 self.response = ('500 transmuted socket-layer error', [], "the error is: %s" % exc_class, None)
             else:
                 self.response = ('500 server error', [], "the error is: %s" % exc, None)
+            import traceback
+            print >> self.environ['wsgi.errors'], "Error fetching transcluder resource %s:" % self.url
+            traceback.print_exc(file=self.environ['wsgi.errors'])
+            print >> self.environ['wsgi.errors'], '-'*60
 
         if self.response[0].startswith('304'):
             self.page_manager.got_304(self)
