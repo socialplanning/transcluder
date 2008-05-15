@@ -99,6 +99,11 @@ class WorkerThread(threading.Thread):
                 try:
                     request.callable(*request.args, **request.kwds)
                 except:
+                    import traceback
+                    print >> sys.stderr, "Error while running callable: %r(*%r, **%r)" % (
+                        request.callable, request.args, request.kwds)
+                    traceback.print_exc(file=sys.stderr)
+                    print >> sys.stderr, "-"*60
                     request.exception = True
 
     def dismiss(self):
