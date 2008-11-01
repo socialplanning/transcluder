@@ -163,3 +163,8 @@ class TranscluderMiddleware:
             parsed = None
 
         return status, headers, body, parsed
+
+def make_filter(global_conf, **app_conf):
+    def filter(app):
+        return TranscluderMiddleware(app)
+    return filter

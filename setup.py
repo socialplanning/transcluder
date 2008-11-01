@@ -24,7 +24,7 @@ setup(name="Transcluder",
       packages=find_packages(exclude=[]),
       zip_safe=False,
       install_requires=[
-        'lxml>=1.2,<2.0dev',
+        'lxml>=2',
         'Paste >= 1.3',
         'PasteScript',
         'FormEncode', 
@@ -40,7 +40,7 @@ setup(name="Transcluder",
       ],
       include_package_data=True,
       entry_points="""
-      [paste.filter_app_factory]
+      [paste.filter_factory]
       main = transcluder.middleware:make_filter
 
       [paste.app_factory]
