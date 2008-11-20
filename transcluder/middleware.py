@@ -20,7 +20,7 @@ import lxmlutils
 from transcluder import helpers 
 from transcluder.transclude import Transcluder
 
-from wsgifilter.resource_fetcher import get_internal_resource, get_external_resource, get_file_resource
+from wsgifilter.resource_fetcher import get_internal_resource, get_external_resource, get_file_resource, Request
 from wsgifilter.cache_utils import parse_merged_etag
 from transcluder.cookie_wrapper import * 
 from transcluder.tasklist import PageManager, TaskList
@@ -148,7 +148,10 @@ class TranscluderMiddleware:
         request_url_parts = urlparse(request_url)
 
         if url == construct_url(environ):
-            status, headers, body = intercept_output(environ, self.app)
+
+            req = Request(environ)
+            res = req.get_response(self.app)
+            status, headers, body = res.status, res.headerlist, res.unicode_body
         elif url_parts[0] == 'file':
             status, headers, body = get_file_resource(file, env)
         elif request_url_parts[0:2] == url_parts[0:2]:
