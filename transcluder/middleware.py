@@ -95,7 +95,7 @@ class TranscluderMiddleware:
 
         status, headers, body, parsed = pm.fetch(request_url)
 
-        if parsed: 
+        if parsed is not None: 
             if tc.transclude(parsed, request_url):
                 # XXX doctype 
                 body = lxmlutils.tostring(parsed, doctype_pair=("-//W3C//DTD HTML 4.01 Transitional//EN",
@@ -105,10 +105,11 @@ class TranscluderMiddleware:
             replace_header(headers, 'content-type', 'text/html; charset=utf-8')
 
         pm.merge_headers_into(headers)
-
-        #print "outbound headers: %s" % headers
         
         start_response(status, headers)
+        if isinstance(body, unicode):
+            body = body.encode('utf-8')
+
         return [body]
 
     HTML_DOC_PAT = re.compile(r"^.*<\s*html(\s*|>).*$",re.I|re.M)
