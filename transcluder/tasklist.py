@@ -464,7 +464,7 @@ class PageManager:
         # update dependencies 
         status, headers, body, parsed = task.archive_info() 
         resource = make_resource_key(task.url, task.environ)
-        if parsed:
+        if parsed is not None:
             dep_list = self.find_dependencies(parsed, task.url)
         else:
             dep_list = []
