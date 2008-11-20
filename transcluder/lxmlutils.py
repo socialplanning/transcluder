@@ -147,6 +147,15 @@ def append_many(parent, children):
 
 
 def replace_many(old_el, new_els):
+    def decomplexify(el):
+        #this converts _ElementStringResults, returned by lxml2.0, into 
+        #plain old unicode, which lxml1.3 returned.  It is slightly lossy,
+        #but backwards-compatible
+        if isinstance(el, etree._ElementStringResult):
+            return str(el)
+        else:
+            return el
+    new_els = map(decomplexify, new_els)
     non_text_els = elements_in(new_els)
     strip_tails(non_text_els)
 
