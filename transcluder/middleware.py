@@ -102,9 +102,8 @@ class TranscluderMiddleware:
                                                                 "http://www.w3.org/TR/html4/loose.dtd"))
             #else no need to change body at all
             if isinstance(body, unicode):
-                content_length = str(len(body.encode('utf-8')))
-            else:
-                content_length = str(len(body))
+                body = body.encode('utf-8')
+            content_length = str(len(body))
                 
             replace_header(headers, 'content-length', content_length)
 
