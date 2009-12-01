@@ -36,7 +36,7 @@ setup(name="Transcluder",
         'ElementTree'
       ],
       dependency_links=[
-      	'http://superb-west.dl.sourceforge.net/sourceforge/pyavl/pyavl-1.1.tar.gz#egg=pyavl-dev'
+      	'http://sourceforge.net/projects/pyavl/files/pyavl/1.12/pyavl-1.12.tar.gz/download#egg=pyavl-dev'
       ],
       include_package_data=True,
       entry_points="""
